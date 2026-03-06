@@ -28,6 +28,7 @@ Think of it as an **OS for agents**:
 | Scheduler | Inbox poller + per-agent locking |
 | IPC | `send_message` tool |
 | Signals | Force messages |
+| Daemons | External services that extend Keryx |
 
 ## Features
 
@@ -73,39 +74,31 @@ const response = await kx.request({ to: 'manager', body: 'Status report?' })
 await kx.start()
 ```
 
-## Agents Talk via Tools
+## Daemons
 
-Keryx automatically injects **one tool** into every agent:
-
-- **`send_message`** — send a message to another agent's inbox
-
-That's it. All coordination, shared state, and external integrations are user-injected tools.
-
-## Tool Injection
-
-Keryx is tool-agnostic. Inject your own tools per agent:
+Daemons (δαίμων, *spirit*) are external services that extend Keryx. Unlike MCP servers which are pull-only, daemons are **bidirectional** — they can provide tools to agents AND push messages into agent inboxes.
 
 ```typescript
-import { createTool } from '@elfenlabs/nous'
+import cron from 'node-cron'
 
-const readFile = createTool({
-  id: 'read_file',
-  description: 'Read a file from disk.',
-  schema: { path: { type: 'string' } },
-  execute: async (args) => fs.readFile(args.path, 'utf-8'),
+// crond — pushes messages on a schedule
+cron.schedule('0 9 * * *', () => {
+  kx.send({ to: 'manager', body: 'Good morning! Generate the daily digest.' })
 })
 
-const kx = await createKeryx({
-  agents: [
-    {
-      id: 'swe',
-      instruction: 'You implement code changes.',
-      provider: { ... },
-      tools: [readFile],  // ← your tools, Keryx doesn't care what they do
-    },
-  ],
+// telegramd — pushes incoming messages AND provides a reply tool
+telegramBot.on('message', (msg) => {
+  kx.send({ to: 'manager', body: msg.text, metadata: { chatId: msg.chat.id } })
 })
 ```
+
+| Daemon | Provides Tools | Pushes Messages |
+|---|---|---|
+| **crond** | ✗ | ✓ |
+| **thesauros** | ✓ | ✗ |
+| **telegramd** | ✓ | ✓ |
+
+Keryx is tool-agnostic. Inject any Nous `Tool` into any agent — Keryx doesn't care what the tools do.
 
 ## Requirements
 

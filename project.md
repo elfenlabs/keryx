@@ -234,8 +234,81 @@ Keryx provides a single built-in layer of memory. Additional layers are user-inj
 |---|---|---|---|---|
 | **Nous context** | Private to one agent | Per-agent (`persistContext`) | Mutable (eviction) | Single agent |
 | **User-injected** | Depends on tool | Depends on tool | Depends on tool | User's choice |
+## 5. Daemons
 
-## 5. External Channels
+Daemons (Greek: δαίμων, *spirit*) are external services that extend Keryx. They interact with Keryx in two ways:
+
+- **Provide tools** — injected into agents via `tools: [...]` at registration
+- **Push messages** — call `kx.send()` to enqueue messages into agent inboxes
+
+A daemon can do one or both. This is the standard pattern for integrating external systems with Keryx.
+
+### 5.1. Daemon vs MCP Server
+
+MCP (Model Context Protocol) servers are **pull-only** — the agent calls the server via tool calls, but the server cannot initiate communication.
+
+Daemons are **bidirectional** — agents call the daemon via tools, AND the daemon can push messages into agent inboxes. This enables event-driven patterns that MCP cannot express.
+
+| | MCP Server | Keryx Daemon |
+|---|---|---|
+| **Direction** | Agent → Server (pull) | Agent ↔ Daemon (bidirectional) |
+| **Agent calls service** | ✓ (tool calls) | ✓ (injected tools) |
+| **Service calls agent** | ✗ | ✓ (`kx.send()`) |
+| **Event-driven** | ✗ | ✓ (daemon pushes on external events) |
+
+### 5.2. Examples
+
+| Daemon | Provides Tools | Pushes Messages | Description |
+|---|---|---|---|
+| **crond** | ✗ | ✓ | Calls `kx.send()` on a timer/schedule |
+| **thesauros** | ✓ | ✗ | Knowledge graph query + memory stream tools |
+| **ledgerd** | ✓ | ✗ | Shared append-only log tools |
+| **telegramd** | ✓ | ✓ | Sends to Telegram chat (tool) + forwards incoming Telegram messages to inbox |
+| **webhookd** | ✗ | ✓ | Listens for HTTP webhooks, pushes payloads as messages |
+
+### 5.3. Integration Pattern
+
+```typescript
+import { createKeryx } from '@elfenlabs/keryx'
+import { createTool } from '@elfenlabs/nous'
+import cron from 'node-cron'
+
+// Tool-providing daemon (pull-only, like MCP)
+const thesaurosQuery = createTool({
+  id: 'knowledge_query',
+  description: 'Query the knowledge graph.',
+  schema: { query: { type: 'string' } },
+  execute: async (args) => { /* ... */ },
+})
+
+const kx = await createKeryx({
+  agents: [
+    {
+      id: 'manager',
+      instruction: 'You coordinate tasks.',
+      provider: { /* ... */ },
+      tools: [thesaurosQuery],  // ← daemon tools injected here
+    },
+  ],
+})
+
+// Message-pushing daemon (bidirectional)
+cron.schedule('0 9 * * *', () => {
+  kx.send({ to: 'manager', body: 'Good morning! Generate the daily digest.' })
+})
+
+// Another message-pushing daemon
+telegramBot.on('message', (msg) => {
+  kx.send({ to: 'manager', body: msg.text, metadata: { source: 'telegram', chatId: msg.chat.id } })
+})
+
+await kx.start()
+```
+
+> [!NOTE]
+> Keryx does not provide a daemon SDK or protocol. Daemons are a **design pattern**, not a framework feature. Any code that calls `kx.send()` or provides a Nous `Tool` is a daemon.
+
+## 6. External Channels
 
 External channels bridge between the outside world and the agent messaging system. They allow programmatic callers to send messages to agents and optionally receive replies.
 
@@ -286,7 +359,7 @@ await kx.send({ to: 'greeter', body: 'STOP', force: true })
 
 Interrupts the agent's current Nous loop and processes the force message immediately.
 
-## 6. Observability (Hooks)
+## 7. Observability (Hooks)
 
 Keryx does **not** store activation logs, traces, or token usage internally. Instead, it exposes hooks that let consumers build their own observability layer.
 
@@ -327,7 +400,7 @@ Output:
 [summarizer] → "Here is the summary: ..."  (steps: 2, tokens: 3920)
 ```
 
-## 7. Database Schema
+## 8. Database Schema
 
 All Keryx state lives in PostgreSQL. Three tables.
 
@@ -374,7 +447,7 @@ CREATE TABLE agent_contexts (
 );
 ```
 
-## 8. Programmatic API
+## 9. Programmatic API
 
 Keryx exposes a TypeScript API for embedding in other applications:
 
@@ -418,7 +491,7 @@ await kx.start()
 await kx.stop()
 ```
 
-### 8.1. Tool Injection
+### 9.1. Tool Injection
 
 Keryx is **tool-agnostic**. Users inject any Nous `Tool` instances they want — Keryx doesn't know or care what they do. This is how external integrations like Thesauros, file systems, APIs, etc. are wired in:
 
@@ -459,11 +532,11 @@ const kx = await createKeryx({
 
 Keryx merges the user-provided tools with its own injected tool (`send_message`). The agent sees all of them as a flat tool set.
 
-## 9. Process Manager
+## 10. Process Manager
 
 The Process Manager is the runtime core of Keryx. It polls agent inboxes, spawns Nous instances, and manages agent lifecycles.
 
-### 9.1. Architecture
+### 10.1. Architecture
 
 Keryx treats Nous as a **pure reducer**: `agent = reducer(context, instruction, tools) → result`. The Process Manager's job is to invoke this reducer with the right inputs and handle the outputs.
 
@@ -475,7 +548,7 @@ Process Manager
 └── Nous Runner          — prepares context + tools, calls runAgent()
 ```
 
-### 9.2. Processing Loop
+### 10.2. Processing Loop
 
 ```
 1. POLL:    Query all inboxes for unclaimed messages
@@ -506,7 +579,7 @@ Process Manager
             Check inbox for next message → repeat from step 3, or exit
 ```
 
-### 9.3. Serial-Per-Agent Execution
+### 10.3. Serial-Per-Agent Execution
 
 Each agent processes messages **one at a time**. Multiple agents can run concurrently (Node.js async), but a single agent never has two overlapping Nous loops.
 
@@ -532,7 +605,7 @@ async function processInbox(agentId: string) {
 }
 ```
 
-### 9.4. Force Message Handling
+### 10.4. Force Message Handling
 
 When a force message arrives for an agent that is currently running:
 
@@ -542,7 +615,7 @@ When a force message arrives for an agent that is currently running:
 4. The force message is next in the priority queue (force messages get highest dequeue priority)
 5. Processing continues with the force message
 
-### 9.5. Error Handling Policy
+### 10.5. Error Handling Policy
 
 **Log and skip.** When `runAgent()` throws (provider error, `MaxStepsError`, `ContextBudgetError`, etc.):
 
@@ -555,7 +628,7 @@ No retries, no dead-letter queue. The hooks provide full visibility — consumer
 > [!NOTE]
 > Tool-level errors (e.g., `send_message` fails) are handled **inside** Nous — the error is returned as a tool result and the LLM can self-correct. Only unrecoverable errors that crash the entire `runAgent()` call reach the Process Manager.
 
-## 10. Technology Stack
+## 11. Technology Stack
 
 | Component | Technology |
 |---|---|
@@ -565,7 +638,7 @@ No retries, no dead-letter queue. The hooks provide full visibility — consumer
 | Database | PostgreSQL |
 | Process model | Single Node.js process, serial per-agent |
 
-## 11. Out of Scope (v1)
+## 12. Out of Scope (v1)
 
 - **Multi-node / distributed orchestration** — single process for now
 - **HTTP API** — programmatic API only
