@@ -76,7 +76,7 @@ Everything is a message. Agent-to-agent communication, external events, and "sto
 ```typescript
 type Message = {
   id: string                       // unique message ID
-  to: string                       // target agent ID (or external channel ID)
+  to: string                       // target agent ID (or reply channel ID for kx.request)
   from: string | null              // sender agent ID (null = system/external)
   body: string                     // message content (natural language)
   priority: number                 // 0 = normal, higher = more urgent
@@ -234,6 +234,7 @@ Keryx provides a single built-in layer of memory. Additional layers are user-inj
 |---|---|---|---|---|
 | **Nous context** | Private to one agent | Per-agent (`persistContext`) | Mutable (eviction) | Single agent |
 | **User-injected** | Depends on tool | Depends on tool | Depends on tool | User's choice |
+
 ## 5. Daemons
 
 Daemons (Greek: δαίμων, *spirit*) are external services that extend Keryx. They interact with Keryx in two ways:
@@ -308,58 +309,7 @@ await kx.start()
 > [!NOTE]
 > Keryx does not provide a daemon SDK or protocol. Daemons are a **design pattern**, not a framework feature. Any code that calls `kx.send()` or provides a Nous `Tool` is a daemon.
 
-## 6. External Channels
-
-External channels bridge between the outside world and the agent messaging system. They allow programmatic callers to send messages to agents and optionally receive replies.
-
-### 5.1. Fire-and-Forget
-
-```typescript
-await kx.send({ to: 'greeter', body: 'Good morning!' })
-```
-
-Enqueues a message to the agent's inbox with no expectation of a response.
-
-### 5.2. Request-Reply
-
-```typescript
-const response = await kx.request({ to: 'summarizer', body: 'Summarize this article: ...' })
-// response = "Here is the summary: ..."
-```
-
-Internally:
-1. Creates an ephemeral external channel `ext-<uuid>` (an in-memory `Map<channelId, PromiseResolver>`)
-2. Sends the message with `replyTo: 'ext-<uuid>'`
-3. The agent sees `replyTo: ext-<uuid>` in its system prompt and calls `send_message(to: 'ext-<uuid>', ...)`
-4. Keryx intercepts messages to `ext-*` — instead of queuing, it resolves the waiting Promise
-5. Cleans up the channel entry from the map
-
-The agent doesn't know it's talking to an external system. It just sees a `replyTo` address.
-
-**Timeouts** are the caller's responsibility, using the standard `AbortSignal` API:
-
-```typescript
-const response = await kx.request({
-  to: 'summarizer',
-  body: 'Summarize this article: ...',
-  signal: AbortSignal.timeout(30_000)  // give up after 30s
-})
-```
-
-When aborted, the Promise rejects and the ephemeral channel is cleaned up. If the agent eventually replies to a cleaned-up channel, the reply is silently dropped.
-
-> [!NOTE]
-> Channels are one-shot: the first reply resolves the Promise. Streaming intermediate updates through external channels is out of scope for v1.
-
-### 5.3. Force Messages
-
-```typescript
-await kx.send({ to: 'greeter', body: 'STOP', force: true })
-```
-
-Interrupts the agent's current Nous loop and processes the force message immediately.
-
-## 7. Observability (Hooks)
+## 6. Observability (Hooks)
 
 Keryx does **not** store activation logs, traces, or token usage internally. Instead, it exposes hooks that let consumers build their own observability layer.
 
@@ -447,7 +397,7 @@ CREATE TABLE agent_contexts (
 );
 ```
 
-## 9. Programmatic API
+## 8. Programmatic API
 
 Keryx exposes a TypeScript API for embedding in other applications:
 
@@ -478,7 +428,7 @@ const kx = await createKeryx({
 // Fire-and-forget
 await kx.send({ to: 'manager', body: 'Process this PDF...' })
 
-// Request-reply (via external channel)
+// Request-reply
 const summary = await kx.request({ to: 'manager', body: 'What tasks are running?' })
 
 // Force interrupt
@@ -491,7 +441,38 @@ await kx.start()
 await kx.stop()
 ```
 
-### 9.1. Tool Injection
+### 8.1. Request-Reply (`kx.request`)
+
+`kx.request()` is a convenience for programmatic callers that want a synchronous response from an agent.
+
+```typescript
+const response = await kx.request({ to: 'summarizer', body: 'Summarize this article: ...' })
+// response = "Here is the summary: ..."
+```
+
+Internally:
+1. Creates an ephemeral reply channel `ext-<uuid>` (an in-memory `Map<channelId, PromiseResolver>`)
+2. Sends the message with `replyTo: 'ext-<uuid>'`
+3. The agent sees `replyTo: ext-<uuid>` in its system prompt and calls `send_message(to: 'ext-<uuid>', ...)`
+4. Keryx intercepts messages to `ext-*` — instead of queuing, it resolves the waiting Promise
+5. Cleans up the channel entry from the map
+
+**Timeouts** are the caller's responsibility via `AbortSignal`:
+
+```typescript
+const response = await kx.request({
+  to: 'summarizer',
+  body: 'Summarize this article: ...',
+  signal: AbortSignal.timeout(30_000)
+})
+```
+
+When aborted, the Promise rejects and the channel is cleaned up. Stale replies are silently dropped.
+
+> [!NOTE]
+> For daemon-mediated interactions (Telegram, Discord, etc.), agents reply via **tool calls** to the daemon — not via `kx.request()`. The request-reply pattern is for programmatic callers embedding Keryx in their own code.
+
+### 8.2. Tool Injection
 
 Keryx is **tool-agnostic**. Users inject any Nous `Tool` instances they want — Keryx doesn't know or care what they do. This is how external integrations like Thesauros, file systems, APIs, etc. are wired in:
 
@@ -532,11 +513,11 @@ const kx = await createKeryx({
 
 Keryx merges the user-provided tools with its own injected tool (`send_message`). The agent sees all of them as a flat tool set.
 
-## 10. Process Manager
+## 9. Process Manager
 
 The Process Manager is the runtime core of Keryx. It polls agent inboxes, spawns Nous instances, and manages agent lifecycles.
 
-### 10.1. Architecture
+### 9.1. Architecture
 
 Keryx treats Nous as a **pure reducer**: `agent = reducer(context, instruction, tools) → result`. The Process Manager's job is to invoke this reducer with the right inputs and handle the outputs.
 
@@ -548,7 +529,7 @@ Process Manager
 └── Nous Runner          — prepares context + tools, calls runAgent()
 ```
 
-### 10.2. Processing Loop
+### 9.2. Processing Loop
 
 ```
 1. POLL:    Query all inboxes for unclaimed messages
@@ -579,7 +560,7 @@ Process Manager
             Check inbox for next message → repeat from step 3, or exit
 ```
 
-### 10.3. Serial-Per-Agent Execution
+### 9.3. Serial-Per-Agent Execution
 
 Each agent processes messages **one at a time**. Multiple agents can run concurrently (Node.js async), but a single agent never has two overlapping Nous loops.
 
@@ -605,7 +586,7 @@ async function processInbox(agentId: string) {
 }
 ```
 
-### 10.4. Force Message Handling
+### 9.4. Force Message Handling
 
 When a force message arrives for an agent that is currently running:
 
@@ -615,7 +596,7 @@ When a force message arrives for an agent that is currently running:
 4. The force message is next in the priority queue (force messages get highest dequeue priority)
 5. Processing continues with the force message
 
-### 10.5. Error Handling Policy
+### 9.5. Error Handling Policy
 
 **Log and skip.** When `runAgent()` throws (provider error, `MaxStepsError`, `ContextBudgetError`, etc.):
 
@@ -628,7 +609,7 @@ No retries, no dead-letter queue. The hooks provide full visibility — consumer
 > [!NOTE]
 > Tool-level errors (e.g., `send_message` fails) are handled **inside** Nous — the error is returned as a tool result and the LLM can self-correct. Only unrecoverable errors that crash the entire `runAgent()` call reach the Process Manager.
 
-## 11. Technology Stack
+## 10. Technology Stack
 
 | Component | Technology |
 |---|---|
@@ -638,7 +619,7 @@ No retries, no dead-letter queue. The hooks provide full visibility — consumer
 | Database | PostgreSQL |
 | Process model | Single Node.js process, serial per-agent |
 
-## 12. Out of Scope (v1)
+## 11. Out of Scope (v1)
 
 - **Multi-node / distributed orchestration** — single process for now
 - **HTTP API** — programmatic API only
