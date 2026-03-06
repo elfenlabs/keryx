@@ -602,12 +602,36 @@ When a force message arrives for an agent that is currently running:
 
 1. Mark the message with `failed_at = NOW()`
 2. Emit the `onError` hook with the error details
-3. Move on to the next message in the inbox
+3. If the message has a `from` agent, enqueue a **failure notification** to the sender (see §9.6)
+4. Move on to the next message in the inbox
 
 No retries, no dead-letter queue. The hooks provide full visibility — consumers can build retry logic externally if needed.
 
 > [!NOTE]
 > Tool-level errors (e.g., `send_message` fails) are handled **inside** Nous — the error is returned as a tool result and the LLM can self-correct. Only unrecoverable errors that crash the entire `runAgent()` call reach the Process Manager.
+
+### 9.6. Failure Notifications
+
+When a message processing fails and the original message has a `from` agent, Keryx automatically enqueues a failure notification back to the sender:
+
+```typescript
+// Auto-enqueued by the Process Manager on failure
+{
+  to: originalMessage.from,        // back to the sender
+  from: 'system',                  // not from the failed agent
+  body: `Message to "${originalMessage.to}" failed: ${error.message}`,
+  metadata: {
+    type: 'delivery_failure',
+    originalMessageId: originalMessage.id,
+    targetAgent: originalMessage.to,
+    error: error.constructor.name,
+  },
+}
+```
+
+This keeps failure handling within the actor model — the sender receives a message rather than needing to introspect the runtime. The sender agent can then reason about the failure and decide how to proceed (retry, skip, synthesize with partial data, etc.).
+
+Messages from external sources (`from: null`) or system messages do not trigger failure notifications — only agent-to-agent messages do. Failure details are always emitted via the `onError` hook regardless.
 
 ## 10. Technology Stack
 
