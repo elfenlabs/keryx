@@ -28,14 +28,12 @@ Think of it as an **OS for agents**:
 | Scheduler | Inbox poller + per-agent locking |
 | IPC | `send_message` tool |
 | Signals | Force messages |
-| Cron | Built-in cron scheduler |
 
 ## Features
 
 - **Message bus** — PostgreSQL-backed inbox per agent with priority queuing
 - **Process manager** — spawn-on-demand, serial per-agent, concurrent across agents
 - **Context persistence** — configurable per-agent stateful/stateless execution
-- **Cron scheduler** — push messages to agent inboxes on a schedule
 - **Force interrupts** — abort running agents via `AbortSignal`
 - **External channels** — fire-and-forget and request-reply patterns
 - **Hooks** — observability without opinions (bring your own logging)
@@ -45,7 +43,6 @@ Think of it as an **OS for agents**:
 
 ```typescript
 import { createKeryx } from '@elfenlabs/keryx'
-import { createTool } from '@elfenlabs/nous'
 
 const kx = await createKeryx({
   db: 'postgres://localhost:5432/keryx',
@@ -89,6 +86,8 @@ That's it. All coordination, shared state, and external integrations are user-in
 Keryx is tool-agnostic. Inject your own tools per agent:
 
 ```typescript
+import { createTool } from '@elfenlabs/nous'
+
 const readFile = createTool({
   id: 'read_file',
   description: 'Read a file from disk.',

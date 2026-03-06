@@ -2,7 +2,7 @@
 
 ## 1. Product Vision & Executive Summary
 
-**Keryx** (Greek: κῆρυξ, *herald*) is a process manager and message bus for autonomous AI agents. Each agent is a [Nous](file:///home/yonder/projects/nous) instance — a system prompt, a tool set, and a provider config. Keryx gives agents the ability to **communicate**, **schedule**, and **interrupt** each other through a shared message queue backed by PostgreSQL.
+**Keryx** (Greek: κῆρυξ, *herald*) is a process manager and message bus for autonomous AI agents. Each agent is a [Nous](file:///home/yonder/projects/nous) instance — a system prompt, a tool set, and a provider config. Keryx gives agents the ability to **communicate** and **interrupt** each other through a shared message queue backed by PostgreSQL.
 
 It is the missing middle layer between Nous (the agent runner) and Drakonyx (the product):
 
@@ -31,7 +31,7 @@ Keryx exists for everything Nous can't do alone:
 | Synchronous sub-agent calls | **Nous** (tool call = sub-agent) |
 | Asynchronous agent-to-agent messaging | **Keryx** |
 | Parallel agent execution | **Keryx** |
-| Scheduled/cron-triggered agents | **Keryx** |
+| Scheduled/cron-triggered agents | **User-space** (`kx.send()` on a timer) |
 | External system → agent communication | **Keryx** |
 | Agent lifecycle management | **Keryx** |
 
@@ -43,7 +43,7 @@ Every agent is an **actor** with a **mailbox** (inbox). Message arrival is the *
 
 ```
                     ┌─────────┐
-  Cron ────msg────▶ │  INBOX  │ ──dequeue──▶ [Nous Loop] ──msg──▶ Other Inbox
+  External ──msg──▶ │  INBOX  │ ──dequeue──▶ [Nous Loop] ──msg──▶ Other Inbox
   Agent B ─msg───▶  │ (queue) │              (processing)
   Webhook ─msg───▶  │ sorted  │
                     │ by prio │
@@ -71,13 +71,13 @@ type AgentDefinition = {
 
 ### 2.3. Messages
 
-Everything is a message. Cron triggers, agent-to-agent communication, external events, and "stop" commands are all messages routed to agent inboxes.
+Everything is a message. Agent-to-agent communication, external events, and "stop" commands are all messages routed to agent inboxes.
 
 ```typescript
 type Message = {
   id: string                       // unique message ID
   to: string                       // target agent ID (or external channel ID)
-  from: string | null              // sender agent ID (null = system/cron/external)
+  from: string | null              // sender agent ID (null = system/external)
   body: string                     // message content (natural language)
   priority: number                 // 0 = normal, higher = more urgent
   force: boolean                   // if true, abort current Nous loop
@@ -104,14 +104,14 @@ Messages are dequeued in **priority order** (highest first, FIFO within same pri
 ┌──────────────────────────────────────────────────────────────┐
 │                          KERYX                               │
 │                                                              │
-│  ┌──────────────┐   ┌──────────────────────────────────┐     │
-│  │   REGISTRY   │   │        SCHEDULER (Cron)          │     │
-│  │              │   │                                  │     │
-│  │  agent defs  │   │  cron rules → push messages      │     │
-│  │  (static)    │   │  to agent inboxes                │     │
-│  └──────┬───────┘   └──────────┬───────────────────────┘     │
-│         │                      │                             │
-│         ▼                      ▼                             │
+│  ┌──────────────┐                                          │
+│  │   REGISTRY   │                                          │
+│  │              │                                          │
+│  │  agent defs  │                                          │
+│  │  (static)    │                                          │
+│  └──────┬───────┘                                          │
+│         │                                                    │
+│         ▼                                                    │
 │  ┌──────────────────────────────────────────────────────┐    │
 │  │              MESSAGE BUS (PostgreSQL)                 │    │
 │  │                                                      │    │
@@ -327,51 +327,9 @@ Output:
 [summarizer] → "Here is the summary: ..."  (steps: 2, tokens: 3920)
 ```
 
-## 7. Scheduler (Cron)
+## 7. Database Schema
 
-The Scheduler is a built-in cron engine that pushes messages to agent inboxes on a schedule.
-
-```typescript
-type CronRule = {
-  id: string
-  schedule: string                 // cron expression, e.g. "0 * * * *"
-  to: string                       // target agent ID
-  body: string                     // message body
-  priority?: number                // default: 0
-  metadata?: Record<string, any>
-}
-```
-
-Example rules:
-
-```json
-[
-  {
-    "id": "daily-digest",
-    "schedule": "0 9 * * *",
-    "to": "summarizer",
-    "body": "Generate a daily digest of yesterday's activity.",
-    "priority": 1
-  },
-  {
-    "id": "hourly-triage",
-    "schedule": "0 * * * *",
-    "to": "triage",
-    "body": "Check for new unprocessed items and categorize them."
-  }
-]
-```
-
-> [!NOTE]
-> **Edge cases:**
->
-> - **Overlapping triggers:** Every trigger enqueues a message, even if the agent is still processing a previous one. Messages queue up normally. If an agent can't keep pace with its cron interval, the inbox grows — this is a configuration concern, not something Keryx masks.
-> - **Missed schedules:** If Keryx was down when a trigger was due, the trigger is skipped. No catch-up. Cron is best-effort.
-> - **Force messages:** Cron rules do not support `force: true`. Cron messages are always normal-priority queued messages.
-
-## 8. Database Schema
-
-All Keryx state lives in PostgreSQL. Five tables.
+All Keryx state lives in PostgreSQL. Three tables.
 
 ```sql
 -- Agent registry (could also be file-based config loaded at startup)
@@ -414,22 +372,9 @@ CREATE TABLE agent_contexts (
   context_data    JSONB NOT NULL,
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-
--- Cron rules
-CREATE TABLE cron_rules (
-  id              TEXT PRIMARY KEY,
-  schedule        TEXT NOT NULL,
-  to_agent        TEXT NOT NULL REFERENCES agents(id),
-  body            TEXT NOT NULL,
-  priority        INT NOT NULL DEFAULT 0,
-  metadata        JSONB NOT NULL DEFAULT '{}',
-  enabled         BOOLEAN NOT NULL DEFAULT TRUE,
-  last_run_at     TIMESTAMPTZ,
-  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
 ```
 
-## 9. Programmatic API
+## 8. Programmatic API
 
 Keryx exposes a TypeScript API for embedding in other applications:
 
@@ -454,9 +399,6 @@ const kx = await createKeryx({
       // persistContext defaults to false (stateless worker)
     },
   ],
-  cron: [
-    { id: 'morning', schedule: '0 9 * * *', to: 'manager', body: 'Good morning!' },
-  ],
   hooks: terminalLogger(),
 })
 
@@ -469,14 +411,14 @@ const summary = await kx.request({ to: 'manager', body: 'What tasks are running?
 // Force interrupt
 await kx.send({ to: 'manager', body: 'STOP', force: true })
 
-// Start Keryx (begins polling inboxes + running cron)
+// Start Keryx (begins polling inboxes)
 await kx.start()
 
 // Graceful shutdown
 await kx.stop()
 ```
 
-### 9.1. Tool Injection
+### 8.1. Tool Injection
 
 Keryx is **tool-agnostic**. Users inject any Nous `Tool` instances they want — Keryx doesn't know or care what they do. This is how external integrations like Thesauros, file systems, APIs, etc. are wired in:
 
@@ -517,11 +459,11 @@ const kx = await createKeryx({
 
 Keryx merges the user-provided tools with its own injected tool (`send_message`). The agent sees all of them as a flat tool set.
 
-## 10. Process Manager
+## 9. Process Manager
 
 The Process Manager is the runtime core of Keryx. It polls agent inboxes, spawns Nous instances, and manages agent lifecycles.
 
-### 10.1. Architecture
+### 9.1. Architecture
 
 Keryx treats Nous as a **pure reducer**: `agent = reducer(context, instruction, tools) → result`. The Process Manager's job is to invoke this reducer with the right inputs and handle the outputs.
 
@@ -533,7 +475,7 @@ Process Manager
 └── Nous Runner          — prepares context + tools, calls runAgent()
 ```
 
-### 10.2. Processing Loop
+### 9.2. Processing Loop
 
 ```
 1. POLL:    Query all inboxes for unclaimed messages
@@ -564,7 +506,7 @@ Process Manager
             Check inbox for next message → repeat from step 3, or exit
 ```
 
-### 10.3. Serial-Per-Agent Execution
+### 9.3. Serial-Per-Agent Execution
 
 Each agent processes messages **one at a time**. Multiple agents can run concurrently (Node.js async), but a single agent never has two overlapping Nous loops.
 
@@ -590,7 +532,7 @@ async function processInbox(agentId: string) {
 }
 ```
 
-### 10.4. Force Message Handling
+### 9.4. Force Message Handling
 
 When a force message arrives for an agent that is currently running:
 
@@ -600,7 +542,7 @@ When a force message arrives for an agent that is currently running:
 4. The force message is next in the priority queue (force messages get highest dequeue priority)
 5. Processing continues with the force message
 
-### 10.5. Error Handling Policy
+### 9.5. Error Handling Policy
 
 **Log and skip.** When `runAgent()` throws (provider error, `MaxStepsError`, `ContextBudgetError`, etc.):
 
@@ -613,7 +555,7 @@ No retries, no dead-letter queue. The hooks provide full visibility — consumer
 > [!NOTE]
 > Tool-level errors (e.g., `send_message` fails) are handled **inside** Nous — the error is returned as a tool result and the LLM can self-correct. Only unrecoverable errors that crash the entire `runAgent()` call reach the Process Manager.
 
-## 11. Technology Stack
+## 10. Technology Stack
 
 | Component | Technology |
 |---|---|
@@ -621,10 +563,9 @@ No retries, no dead-letter queue. The hooks provide full visibility — consumer
 | Agent runtime | Nous SDK (`@elfenlabs/nous`) |
 | Package | `@elfenlabs/keryx` |
 | Database | PostgreSQL |
-| Cron | `node-cron` or similar |
 | Process model | Single Node.js process, serial per-agent |
 
-## 12. Out of Scope (v1)
+## 11. Out of Scope (v1)
 
 - **Multi-node / distributed orchestration** — single process for now
 - **HTTP API** — programmatic API only
