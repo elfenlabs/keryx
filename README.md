@@ -17,7 +17,7 @@ Agent orchestrator — process manager and message bus for autonomous AI agents 
 
 ## What is Keryx?
 
-Keryx is the missing middle layer between **Nous** (the agent runtime) and your application. It manages agent lifecycles, routes messages between inboxes, and provides the primitives for agents to communicate and coordinate.
+Keryx is the missing middle layer between **Nous** (the agent runtime) and your application. It manages agent lifecycles, routes messages between inboxes, and provides the primitives for agents to communicate.
 
 Think of it as an **OS for agents**:
 
@@ -27,7 +27,6 @@ Think of it as an **OS for agents**:
 | Process | Agent (Nous instance) |
 | Scheduler | Inbox poller + per-agent locking |
 | IPC | `send_message` tool |
-| Files | Ledgers (append-only shared logs) |
 | Signals | Force messages |
 | Cron | Built-in cron scheduler |
 
@@ -35,7 +34,6 @@ Think of it as an **OS for agents**:
 
 - **Message bus** — PostgreSQL-backed inbox per agent with priority queuing
 - **Process manager** — spawn-on-demand, serial per-agent, concurrent across agents
-- **Ledgers** — append-only shared logs for cross-agent coordination
 - **Context persistence** — configurable per-agent stateful/stateless execution
 - **Cron scheduler** — push messages to agent inboxes on a schedule
 - **Force interrupts** — abort running agents via `AbortSignal`
@@ -80,14 +78,11 @@ await kx.start()
 
 ## Agents Talk via Tools
 
-Keryx automatically injects these tools into every agent:
+Keryx automatically injects **one tool** into every agent:
 
 - **`send_message`** — send a message to another agent's inbox
-- **`create_ledger`** — create a shared append-only log
-- **`read_ledger`** — read all entries from a ledger
-- **`append_ledger`** — append an entry to a ledger
 
-Agents don't know they're being orchestrated. They just see tools.
+That's it. All coordination, shared state, and external integrations are user-injected tools.
 
 ## Tool Injection
 
@@ -112,14 +107,6 @@ const kx = await createKeryx({
   ],
 })
 ```
-
-## Three-Layer Memory Model
-
-| Layer | Scope | Persistence | Owner |
-|---|---|---|---|
-| **Nous context** | Private to one agent | Configurable | Single agent |
-| **Ledger** | Shared across agents | Append-only | Any agent |
-| **Thesauros** | Knowledge graph | Permanent | User-injected |
 
 ## Requirements
 

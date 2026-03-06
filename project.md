@@ -65,7 +65,6 @@ type AgentDefinition = {
 
   // Keryx injects these automatically:
   //   - send_message tool
-  //   - create_ledger / read_ledger / append_ledger tools
   //   - Agent registry awareness (via system prompt addendum)
 }
 ```
@@ -126,7 +125,7 @@ Messages are dequeued in **priority order** (highest first, FIFO within same pri
 │  │              PROCESS MANAGER                          │    │
 │  │                                                      │    │
 │  │  - Spawns Nous instances on demand                     │    │
-│  │  - Injects messaging + ledger tools                   │    │
+│  │  - Injects messaging tools                            │    │
 │  │  - Merges user-injected tools into agent tool set     │    │
 │  │  - Manages AbortControllers per agent                 │    │
 │  │  - Optionally persists/restores context per agent     │    │
@@ -148,7 +147,7 @@ Agents do **not** run continuously. They are spawned when messages arrive and ex
    └─ NO → spawn new Nous instance:
        a. Load agent definition from Registry
        b. If persistContext: restore serialized context; else: fresh context
-       c. Inject tools (send_message, ledger tools, agent-specific tools)
+       c. Inject tools (send_message, agent-specific tools)
        d. Inject system prompt addendum (identity, registry, current message metadata)
        e. Push inbox message as user message into context
        f. Run Nous loop: await runAgent({ ctx, provider, instruction, tools, signal })
@@ -166,7 +165,7 @@ Context persistence is **configurable per agent** via the `persistContext` flag.
 - **`persistContext: true`:** Context is serialized after each activation and restored on the next. The agent accumulates conversation history across activations. Nous's eviction strategy keeps it bounded. Ideal for coordinators and user-facing agents that need situational awareness.
 
 > [!NOTE]
-> Context persistence is private to a single agent. For shared state across agents, use **ledgers** (§4). For permanent structured knowledge, use **Thesauros** (§9).
+> Context persistence is private to a single agent. For shared state across agents, inject your own coordination tools (ledgers, shared databases, etc.).
 
 ### 3.4. Text Output (Monologue)
 
@@ -195,51 +194,6 @@ createTool({
 })
 ```
 
-#### `create_ledger`
-
-```typescript
-createTool({
-  id: 'create_ledger',
-  description: 'Create a shared ledger for tracking tasks or sharing state across agents. Returns the ledger ID.',
-  schema: {
-    content: { type: 'string', description: 'Initial entry content' },
-  },
-  execute: async (args) => {
-    // Creates ledger + first entry, returns ledger ID
-  },
-})
-```
-
-#### `read_ledger`
-
-```typescript
-createTool({
-  id: 'read_ledger',
-  description: 'Read all entries from a ledger.',
-  schema: {
-    id: { type: 'string', description: 'Ledger ID' },
-  },
-  execute: async (args) => {
-    // Returns all entries ordered by time, each with agent ID and timestamp
-  },
-})
-```
-
-#### `append_ledger`
-
-```typescript
-createTool({
-  id: 'append_ledger',
-  description: 'Append an entry to an existing ledger.',
-  schema: {
-    id:      { type: 'string', description: 'Ledger ID' },
-    content: { type: 'string', description: 'Entry content to append' },
-  },
-  execute: async (args) => {
-    // Appends a new entry with the current agent's ID and timestamp
-  },
-})
-```
 
 > [!NOTE]
 > There is no separate `reply` tool. To reply to the sender, the agent uses `send_message` with `to` set to the `replyTo` value shown in the system prompt addendum. This keeps the communication model to a single, explicit primitive.
@@ -251,13 +205,12 @@ Keryx prepends an addendum to each agent's `instruction` with:
 - The agent's own identity (`You are agent "summarizer"`)
 - The agent registry (available agents and their descriptions)
 - Messaging conventions (how to use `send_message`, how to reply)
-- Ledger conventions (how to create, read, and append)
 - The current message being processed (sender, replyTo, priority, metadata)
 
 Example addendum:
 
 ```
-You are agent "manager". You communicate with other agents using the send_message tool. You can track shared tasks using ledgers (create_ledger, read_ledger, append_ledger).
+You are agent "manager". You communicate with other agents using the send_message tool.
 
 Available agents:
 - video_editor: Extracts and converts audio/video formats
@@ -273,44 +226,14 @@ Current message:
 To reply to the original requester, use send_message with to="ext-abc123".
 ```
 
-## 4. Ledgers (Shared Context)
+## 4. Memory Model
 
-Ledgers are **append-only shared logs** that allow agents to collaborate on tasks without coupling their contexts. Any agent can create, read, or append to a ledger given its ID.
-
-### 4.1. Design Principles
-
-- **Append-only.** Entries are never modified or deleted. This eliminates concurrency conflicts — multiple agents can append simultaneously without coordination.
-- **Shared by reference.** Ledger IDs are passed through message bodies. Any agent with the ID can read or append.
-- **Schemaless.** Entry content is freeform text. The producing agent decides what to write.
-
-### 4.2. Use Cases
-
-**Task tracking:** A coordinator creates a ledger describing a task, dispatches workers, and workers append their results. The coordinator reads the ledger to check progress.
-
-**Parallel fan-out with incremental updates:**
-
-```
-Ledger: ledger-456
-─────────────────────────────────────────────────────────────────
-[manager,       10:00:01]  Task: extract audio + pick 3 dog photos
-[manager,       10:00:01]  Dispatched video_editor: extract audio
-[manager,       10:00:01]  Dispatched image_manager: pick dog photos
-[video_editor,  10:02:15]  Done. Audio extracted to /output/audio.mp3
-[image_manager, 10:05:30]  Done. Selected: img1.jpg, img5.jpg, img9.jpg
-─────────────────────────────────────────────────────────────────
-```
-
-The coordinator processes each worker's completion message as it arrives, reads the ledger for the full picture, and gives incremental updates to the user.
-
-### 4.3. Memory Model
-
-Keryx provides three layers of memory, each serving a different scope:
+Keryx provides a single built-in layer of memory. Additional layers are user-injected.
 
 | Layer | Scope | Persistence | Mutability | Owner |
 |---|---|---|---|---|
 | **Nous context** | Private to one agent | Per-agent (`persistContext`) | Mutable (eviction) | Single agent |
-| **Ledger** | Shared across agents | Append-only in DB | Append-only | Any agent with ID |
-| **Thesauros** | Permanent knowledge graph | Permanent | Full CRUD | Per-agent (pluggable) |
+| **User-injected** | Depends on tool | Depends on tool | Depends on tool | User's choice |
 
 ## 5. External Channels
 
@@ -492,23 +415,6 @@ CREATE TABLE agent_contexts (
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Ledgers (shared append-only logs)
-CREATE TABLE ledgers (
-  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  created_by      TEXT NOT NULL,
-  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE TABLE ledger_entries (
-  id              SERIAL PRIMARY KEY,
-  ledger_id     UUID NOT NULL REFERENCES ledgers(id),
-  agent_id        TEXT NOT NULL,
-  content         TEXT NOT NULL,
-  appended_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX idx_ledger_entries ON ledger_entries(ledger_id, id ASC);
-
 -- Cron rules
 CREATE TABLE cron_rules (
   id              TEXT PRIMARY KEY,
@@ -609,7 +515,7 @@ const kx = await createKeryx({
 })
 ```
 
-Keryx merges the user-provided tools with its own injected tools (`send_message`, `create_ledger`, `read_ledger`, `append_ledger`). The agent sees all of them as a flat tool set.
+Keryx merges the user-provided tools with its own injected tool (`send_message`). The agent sees all of them as a flat tool set.
 
 ## 10. Process Manager
 
@@ -638,7 +544,7 @@ Process Manager
 3. PREPARE: Load agent definition from registry
             If persistContext: restore context from agent_contexts
             Else: create fresh context
-            Build tool set: agent tools + send_message + ledger tools
+            Build tool set: agent tools + send_message
             Create AbortController, store in map
 4. RUN:     Push message body into context as user message
             Call runAgent({ ctx, provider, instruction, tools, signal })
@@ -725,8 +631,7 @@ No retries, no dead-letter queue. The hooks provide full visibility — consumer
 - **Agent hot-reload** — restart to pick up config changes
 - **Parallel per-agent execution** — serial inbox processing per agent
 - **Built-in activation logging** — use hooks for custom observability
-- **Built-in integrations** (Thesauros, file system, etc.) — inject your own tools
 - **Message routing rules** — direct addressing only (no pub/sub, no topics)
-- **Ledger deletion / retention policies** — ledgers live forever for now
+- **Built-in coordination tools** (ledgers, shared databases) — inject your own
 - **Web UI / dashboard**
 - **Authentication / multi-tenancy**
