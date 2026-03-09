@@ -130,7 +130,6 @@ Messages are dequeued in **priority order** (highest first, FIFO within same pri
 │  │  - Merges static + daemon-injected + internal tools     │    │
 │  │  - Routes tool calls to owning daemon or direct execute │    │
 │  │  - Manages AbortControllers per agent                 │    │
-│  │  - Optionally persists/restores context per agent     │    │
 │  │  - Serial: one Nous instance per agent at a time       │    │
 │  └──────────────────────────────────────────────────────┘    │
 │                                                              │
@@ -162,7 +161,7 @@ Agents do **not** run continuously. They are spawned when messages arrive and ex
 
 By default, each activation starts with a **fresh Nous context**. The agent only sees the current message.
 
-For agents that need memory across activations, use the `contextd` daemon (§5.7). The daemon restores context during `onPreActivation` and persists it during `onPostActivation`.
+For agents that need memory across activations, use the `contextd` daemon (§4.7). The daemon restores context during `onPreActivation` and persists it during `onPostActivation`.
 
 ```typescript
 {
@@ -182,7 +181,7 @@ Since context persistence is a daemon, the pipeline composes naturally — other
 
 When the Nous loop exits, it produces a text response (`AgentResult.response`). In Keryx, this text output is **not routed** anywhere — it is purely a monologue.
 
-All inter-agent communication goes through the `send_message` tool explicitly. Text output is emitted via hooks for observability purposes only.
+All inter-agent communication goes through the `send_message` tool explicitly. Text output is available to daemons (e.g. `loggerd`) via the `onPostActivation` hook.
 
 ### 3.5. Injected Tools
 
@@ -237,22 +236,13 @@ Current message:
 To reply to the original requester, use send_message with to="ext-abc123".
 ```
 
-## 4. Memory Model
-
-Keryx provides a single built-in layer of memory. Additional layers are user-injected.
-
-| Layer | Scope | Persistence | Mutability | Owner |
-|---|---|---|---|---|
-| **Nous context** | Private to one agent | Per-agent (via `contextd` daemon) | Mutable (eviction) | Single agent |
-| **User-injected** | Depends on tool | Depends on tool | Depends on tool | User's choice |
-
-## 5. Daemons
+## 4. Daemons
 
 Daemons (Greek: δαίμων, *spirit*) are modular middleware services registered with Keryx that extend its functionality without bloating the core engine.
 
 Daemons interact with Keryx through **lifecycle hooks** — they observe and modify the execution flow at well-defined points. A daemon can provide tools, inject system prompt segments, push messages into inboxes, or handle observability.
 
-### 5.1. Daemon Definition
+### 4.1. Daemon Definition
 
 ```typescript
 type DaemonDefinition = {
@@ -267,7 +257,7 @@ type DaemonDefinition = {
 }
 ```
 
-### 5.2. Lifecycle Hooks
+### 4.2. Lifecycle Hooks
 
 Daemons subscribe to lifecycle hooks that fire in `order` (ascending). All daemons receive the same hooks — they inspect their scoped config to decide whether to act.
 
@@ -319,7 +309,7 @@ activation(agent, message) = daemons.reduce((ctx, daemon) => {
 
 This makes the system stateless and predictable. If a daemon changes its behavior at runtime, the very next activation picks it up automatically.
 
-### 5.3. Scoped Configuration
+### 4.3. Scoped Configuration
 
 Each agent has per-daemon configuration, namespaced by daemon ID:
 
@@ -338,7 +328,7 @@ Each agent has per-daemon configuration, namespaced by daemon ID:
 - If an agent's config **does not include** a daemon's key, the daemon **injects nothing** — minimizing context window usage and preventing unauthorized tool calls.
 - Each daemon defines its own config schema. Keryx just passes the config through.
 
-### 5.4. Tool Routing
+### 4.4. Tool Routing
 
 When Nous invokes a tool, Keryx routes the call to the correct daemon:
 
@@ -349,7 +339,7 @@ When Nous invokes a tool, Keryx routes the call to the correct daemon:
    - If the tool is Keryx-internal (`send_message`) → handle internally.
    - If the tool is a static user-injected tool (`AgentDefinition.tools`) → call its `execute` directly.
 
-### 5.5. Daemon vs MCP Server
+### 4.5. Daemon vs MCP Server
 
 | | MCP Server | Keryx Daemon |
 |---|---|---|
@@ -359,7 +349,7 @@ When Nous invokes a tool, Keryx routes the call to the correct daemon:
 | **Dynamic provisioning** | ✗ | ✓ (per-agent config) |
 | **Lifecycle hooks** | ✗ | ✓ (middleware chain) |
 
-### 5.6. Data Flow
+### 4.6. Data Flow
 
 ```
 1. TRIGGER:   A message hits an agent's inbox.
@@ -376,7 +366,7 @@ When Nous invokes a tool, Keryx routes the call to the correct daemon:
               → Cleanup, metrics, error handling.
 ```
 
-### 5.7. Common Daemons
+### 4.7. Common Daemons
 
 Keryx ships common daemons in the package:
 
@@ -401,7 +391,9 @@ Output:
 [summarizer] → "Here is the summary: ..."  (steps: 2, tokens: 3920)
 ```
 
-### 5.8. Runtime Registration
+`contextd` restores context during `onPreActivation` and saves it during `onPostActivation` for agents with `config: { 'context': { persist: true } }`. Since it's a daemon in the middleware chain, other daemons can intercept and transform context before persistence.
+
+### 4.8. Runtime Registration
 
 Daemons passed to `createKeryx({ daemons: [...] })` are registered at startup. Additional daemons can be registered or deregistered at runtime via the `kx.daemons` namespace:
 
@@ -418,7 +410,7 @@ kx.daemons.list()  // → [{ id: 'loggerd', order: 0 }, { id: 'thesauros', order
 
 Since activation is reducer-style (rebuild from scratch every time), runtime changes take effect on the very next activation with zero coordination.
 
-### 5.9. Examples
+### 4.9. Examples
 
 | Daemon | Provides Tools | Pushes Messages | Description |
 |---|---|---|---|
@@ -430,7 +422,7 @@ Since activation is reducer-style (rebuild from scratch every time), runtime cha
 | **webhookd** | ✗ | ✓ | Listens for HTTP webhooks, pushes payloads as messages |
 
 
-## 6. Database Schema
+## 5. Database Schema
 
 All Keryx state lives in PostgreSQL. Two tables.
 
@@ -469,7 +461,7 @@ CREATE INDEX idx_messages_inbox ON messages(
 ) WHERE claimed_at IS NULL AND failed_at IS NULL AND discarded_at IS NULL;
 ```
 
-## 7. Programmatic API
+## 6. Programmatic API
 
 Keryx exposes a TypeScript API for embedding in other applications:
 
@@ -520,7 +512,7 @@ await kx.start()
 await kx.stop()
 ```
 
-### 7.1. Request-Reply (`kx.request`)
+### 6.1. Request-Reply (`kx.request`)
 
 `kx.request()` is a convenience for programmatic callers that want a synchronous response from an agent.
 
@@ -551,9 +543,9 @@ When aborted, the Promise rejects and the channel is cleaned up. Stale replies a
 > [!NOTE]
 > For daemon-mediated interactions (Telegram, Discord, etc.), agents reply via **tool calls** to the daemon — not via `kx.request()`. The request-reply pattern is for programmatic callers embedding Keryx in their own code.
 
-### 7.2. Tool Injection (Static)
+### 6.2. Tool Injection (Static)
 
-Keryx is **tool-agnostic**. In addition to daemon-provisioned tools (§5), users can inject static Nous `Tool` instances directly:
+Keryx is **tool-agnostic**. In addition to daemon-provisioned tools (§4), users can inject static Nous `Tool` instances directly:
 
 ```typescript
 import { createTool } from '@elfenlabs/nous'
@@ -592,11 +584,11 @@ const kx = await createKeryx({
 
 Keryx merges static user tools, daemon-provisioned tools, and its own `send_message` tool into a flat tool set visible to the agent.
 
-## 8. Process Manager
+## 7. Process Manager
 
 The Process Manager is the runtime core of Keryx. It polls agent inboxes, spawns Nous instances, and manages agent lifecycles.
 
-### 8.1. Architecture
+### 7.1. Architecture
 
 Keryx treats Nous as a **pure reducer**: `agent = reducer(context, instruction, tools) → result`. The Process Manager's job is to invoke this reducer with the right inputs and handle the outputs.
 
@@ -608,7 +600,7 @@ Process Manager
 └── Nous Runner          — prepares context + tools, calls runAgent()
 ```
 
-### 8.2. Processing Loop
+### 7.2. Processing Loop
 
 ```
 1. POLL:    Query all inboxes for unclaimed messages
@@ -643,7 +635,7 @@ Process Manager
             Check inbox for next message → repeat from step 3, or exit
 ```
 
-### 9.3. Serial-Per-Agent Execution
+### 7.3. Serial-Per-Agent Execution
 
 Each agent processes messages **one at a time**. Multiple agents can run concurrently (Node.js async), but a single agent never has two overlapping Nous loops.
 
@@ -669,7 +661,7 @@ async function processInbox(agentId: string) {
 }
 ```
 
-### 8.4. Force Message Handling
+### 7.4. Force Message Handling
 
 When a force message arrives for an agent that is currently running:
 
@@ -679,21 +671,21 @@ When a force message arrives for an agent that is currently running:
 4. The force message is next in the priority queue (force messages get highest dequeue priority)
 5. Processing continues with the force message
 
-### 8.5. Error Handling Policy
+### 7.5. Error Handling Policy
 
 **Log and skip.** When `runAgent()` throws (provider error, `MaxStepsError`, `ContextBudgetError`, etc.):
 
 1. Mark the message with `failed_at = NOW()`
-2. Emit the `onError` hook with the error details
-3. If the message has a `from` agent, enqueue a **failure notification** to the sender (see §9.6)
+2. Run `onPostActivation` on all daemons with the error details
+3. If the message has a `from` agent, enqueue a **failure notification** to the sender (see §7.6)
 4. Move on to the next message in the inbox
 
-No retries, no dead-letter queue. The hooks provide full visibility — consumers can build retry logic externally if needed.
+No retries, no dead-letter queue. Daemons provide full visibility — consumers can build retry logic externally if needed.
 
 > [!NOTE]
 > Tool-level errors (e.g., `send_message` fails) are handled **inside** Nous — the error is returned as a tool result and the LLM can self-correct. Only unrecoverable errors that crash the entire `runAgent()` call reach the Process Manager.
 
-### 8.6. Failure Notifications
+### 7.6. Failure Notifications
 
 When a message processing fails and the original message has a `from` agent, Keryx automatically enqueues a failure notification back to the sender:
 
@@ -716,7 +708,7 @@ This keeps failure handling within the actor model — the sender receives a mes
 
 Messages from external sources (`from: null`) or system messages do not trigger failure notifications — only agent-to-agent messages do. Failure details are always available to daemons via the `onPostActivation` hook.
 
-## 9. Technology Stack
+## 8. Technology Stack
 
 | Component | Technology |
 |---|---|
@@ -726,7 +718,7 @@ Messages from external sources (`from: null`) or system messages do not trigger 
 | Database | PostgreSQL |
 | Process model | Single Node.js process, serial per-agent |
 
-## 10. Out of Scope (v1)
+## 9. Out of Scope (v1)
 
 - **Multi-node / distributed orchestration** — single process for now
 - **HTTP API** — programmatic API only
