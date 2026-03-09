@@ -28,25 +28,25 @@ Think of it as an **OS for agents**:
 | Scheduler | Inbox poller + per-agent locking |
 | IPC | `send_message` tool |
 | Signals | Force messages |
-| Daemons | External services that extend Keryx |
+| Daemons | Middleware services that extend Keryx |
 
 ## Features
 
 - **Message bus** — PostgreSQL-backed inbox per agent with priority queuing
 - **Process manager** — spawn-on-demand, serial per-agent, concurrent across agents
+- **Daemon middleware** — lifecycle hooks for tool provisioning, observability, and more
 - **Context persistence** — configurable per-agent stateful/stateless execution
 - **Force interrupts** — abort running agents via `AbortSignal`
-- **External channels** — fire-and-forget and request-reply patterns
-- **Hooks** — observability without opinions (bring your own logging)
-- **Tool agnostic** — inject any Nous `Tool` instances you want
+- **Tool agnostic** — static tools + daemon-provisioned tools per agent
 
 ## Quick Start
 
 ```typescript
-import { createKeryx } from '@elfenlabs/keryx'
+import { createKeryx, loggerd } from '@elfenlabs/keryx'
 
 const kx = await createKeryx({
   db: 'postgres://localhost:5432/keryx',
+  daemons: [loggerd()],
   agents: [
     {
       id: 'greeter',
@@ -60,6 +60,9 @@ const kx = await createKeryx({
       instruction: 'You coordinate the team. Delegate tasks to other agents.',
       provider: { model: 'gpt-4o', apiKey: process.env.OPENAI_API_KEY },
       persistContext: true,
+      config: {
+        'thesauros': { mode: 'read-write' },
+      },
     },
   ],
 })
@@ -76,29 +79,60 @@ await kx.start()
 
 ## Daemons
 
-Daemons (δαίμων, *spirit*) are external services that extend Keryx. Unlike MCP servers which are pull-only, daemons are **bidirectional** — they can provide tools to agents AND push messages into agent inboxes.
+Daemons (δαίμων, *spirit*) are middleware services that extend Keryx through **lifecycle hooks**. Unlike MCP servers (pull-only), daemons are **bidirectional** — they provide tools AND push messages into agent inboxes.
 
 ```typescript
-import cron from 'node-cron'
+const thesaurosDaemon: DaemonDefinition = {
+  id: 'thesauros',
+  order: 10,
 
-// crond — pushes messages on a schedule
-cron.schedule('0 9 * * *', () => {
-  kx.send({ to: 'manager', body: 'Good morning! Generate the daily digest.' })
-})
+  onPreActivation: (ctx) => {
+    const config = ctx.agentConfig['thesauros']
+    if (!config) return  // no config → inject nothing
 
-// telegramd — pushes incoming messages AND provides a reply tool
-telegramBot.on('message', (msg) => {
-  kx.send({ to: 'manager', body: msg.text, metadata: { chatId: msg.chat.id } })
-})
+    ctx.addTools([queryTool, addEntityTool])
+    ctx.addPromptSegment('You have access to the Thesauros knowledge graph.')
+  },
+
+  onToolCall: (ctx) => {
+    return thesaurosClient.execute(ctx.toolId, ctx.args)
+  },
+}
 ```
+
+### Lifecycle Hooks
+
+| Hook | When | Use |
+|---|---|---|
+| `onMessageReceived` | Message enters inbox | Logging, filtering |
+| `onPreActivation` | Before Nous starts | Tool provisioning, prompt injection |
+| `onToolCall` | Agent calls a daemon tool | Execute tool logic |
+| `onPostActivation` | After activation ends | Cleanup, metrics |
+
+### Scoped Configuration
+
+Agents declare per-daemon capabilities via `config`:
+
+```typescript
+{
+  id: 'researcher',
+  config: {
+    'thesauros': { mode: 'read-write' },  // gets CRUD tools
+    'telegram':  { chatId: 12345 },        // gets send_telegram tool
+  },
+}
+```
+
+No config key = no tools injected. This minimizes context window usage.
+
+### Common Daemons
 
 | Daemon | Provides Tools | Pushes Messages |
 |---|---|---|
+| **loggerd** | ✗ | ✗ |
 | **crond** | ✗ | ✓ |
 | **thesauros** | ✓ | ✗ |
 | **telegramd** | ✓ | ✓ |
-
-Keryx is tool-agnostic. Inject any Nous `Tool` into any agent — Keryx doesn't care what the tools do.
 
 ## Requirements
 
