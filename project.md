@@ -2,7 +2,7 @@
 
 ## 1. Product Vision & Executive Summary
 
-**Keryx** (Greek: κῆρυξ, *herald*) is a process manager and message bus for autonomous AI agents. Each agent is a [Nous](file:///home/yonder/projects/nous) instance — a system prompt, a tool set, and a provider config. Keryx gives agents the ability to **communicate** and **interrupt** each other through a shared message queue backed by PostgreSQL.
+**Keryx** (Greek: κῆρυξ, *herald*) is a process manager and message bus for autonomous AI agents. Each agent is a [Nous](file:///home/yonder/projects/nous) instance — a system prompt, a tool set, and a provider config. Keryx gives agents the ability to **communicate** and **interrupt** each other through an in-memory message queue.
 
 It is the missing middle layer between Nous (the agent runner) and Drakonyx (the product):
 
@@ -114,7 +114,7 @@ Messages are dequeued in **priority order** (highest first, FIFO within same pri
 │         │                                                    │
 │         ▼                                                    │
 │  ┌──────────────────────────────────────────────────────┐    │
-│  │              MESSAGE BUS (PostgreSQL)                 │    │
+│  │              MESSAGE BUS (in-memory)                 │    │
 │  │                                                      │    │
 │  │  ┌──────────┐  ┌──────────┐  ┌──────────┐           │    │
 │  │  │ inbox:A  │  │ inbox:B  │  │ inbox:C  │           │    │
@@ -422,46 +422,7 @@ Since activation is reducer-style (rebuild from scratch every time), runtime cha
 | **webhookd** | ✗ | ✓ | Listens for HTTP webhooks, pushes payloads as messages |
 
 
-## 5. Database Schema
-
-All Keryx state lives in PostgreSQL. Two tables.
-
-```sql
--- Agent registry (could also be file-based config loaded at startup)
-CREATE TABLE agents (
-  id              TEXT PRIMARY KEY,
-  name            TEXT NOT NULL,
-  instruction     TEXT NOT NULL,
-  provider_config JSONB NOT NULL,
-  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
--- Message queue (inbox per agent)
--- Status derived from nullable timestamps:
---   All null = PENDING | claimed_at = PROCESSING | completed_at = DONE
---   failed_at = FAILED | discarded_at = DISCARDED (aborted by force message)
-CREATE TABLE messages (
-  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  to_agent        TEXT NOT NULL REFERENCES agents(id),
-  from_agent      TEXT,
-  body            TEXT NOT NULL,
-  priority        INT NOT NULL DEFAULT 0,
-  force           BOOLEAN NOT NULL DEFAULT FALSE,
-  reply_to        TEXT,
-  metadata        JSONB NOT NULL DEFAULT '{}',
-  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  claimed_at      TIMESTAMPTZ,          -- picked up for processing
-  completed_at    TIMESTAMPTZ,          -- successfully processed
-  failed_at       TIMESTAMPTZ,          -- runAgent() threw
-  discarded_at    TIMESTAMPTZ           -- aborted by force message
-);
-
-CREATE INDEX idx_messages_inbox ON messages(
-  to_agent, priority DESC, created_at ASC
-) WHERE claimed_at IS NULL AND failed_at IS NULL AND discarded_at IS NULL;
-```
-
-## 6. Programmatic API
+## 5. Programmatic API
 
 Keryx exposes a TypeScript API for embedding in other applications:
 
@@ -469,7 +430,6 @@ Keryx exposes a TypeScript API for embedding in other applications:
 import { createKeryx, loggerd } from '@elfenlabs/keryx'
 
 const kx = await createKeryx({
-  db: 'postgres://localhost:5432/orchestrator',
   daemons: [loggerd()],
   agents: [
     {
@@ -512,7 +472,7 @@ await kx.start()
 await kx.stop()
 ```
 
-### 6.1. Request-Reply (`kx.request`)
+### 5.1. Request-Reply (`kx.request`)
 
 `kx.request()` is a convenience for programmatic callers that want a synchronous response from an agent.
 
@@ -543,7 +503,7 @@ When aborted, the Promise rejects and the channel is cleaned up. Stale replies a
 > [!NOTE]
 > For daemon-mediated interactions (Telegram, Discord, etc.), agents reply via **tool calls** to the daemon — not via `kx.request()`. The request-reply pattern is for programmatic callers embedding Keryx in their own code.
 
-### 6.2. Tool Injection (Static)
+### 5.2. Tool Injection (Static)
 
 Keryx is **tool-agnostic**. In addition to daemon-provisioned tools (§4), users can inject static Nous `Tool` instances directly:
 
@@ -584,11 +544,11 @@ const kx = await createKeryx({
 
 Keryx merges static user tools, daemon-provisioned tools, and its own `send_message` tool into a flat tool set visible to the agent.
 
-## 7. Process Manager
+## 6. Process Manager
 
 The Process Manager is the runtime core of Keryx. It polls agent inboxes, spawns Nous instances, and manages agent lifecycles.
 
-### 7.1. Architecture
+### 6.1. Architecture
 
 Keryx treats Nous as a **pure reducer**: `agent = reducer(context, instruction, tools) → result`. The Process Manager's job is to invoke this reducer with the right inputs and handle the outputs.
 
@@ -600,7 +560,7 @@ Process Manager
 └── Nous Runner          — prepares context + tools, calls runAgent()
 ```
 
-### 7.2. Processing Loop
+### 6.2. Processing Loop
 
 ```
 1. POLL:    Query all inboxes for unclaimed messages
@@ -635,7 +595,7 @@ Process Manager
             Check inbox for next message → repeat from step 3, or exit
 ```
 
-### 7.3. Serial-Per-Agent Execution
+### 6.3. Serial-Per-Agent Execution
 
 Each agent processes messages **one at a time**. Multiple agents can run concurrently (Node.js async), but a single agent never has two overlapping Nous loops.
 
@@ -661,7 +621,7 @@ async function processInbox(agentId: string) {
 }
 ```
 
-### 7.4. Force Message Handling
+### 6.4. Force Message Handling
 
 When a force message arrives for an agent that is currently running:
 
@@ -671,13 +631,13 @@ When a force message arrives for an agent that is currently running:
 4. The force message is next in the priority queue (force messages get highest dequeue priority)
 5. Processing continues with the force message
 
-### 7.5. Error Handling Policy
+### 6.5. Error Handling Policy
 
 **Log and skip.** When `runAgent()` throws (provider error, `MaxStepsError`, `ContextBudgetError`, etc.):
 
 1. Mark the message with `failed_at = NOW()`
 2. Run `onPostActivation` on all daemons with the error details
-3. If the message has a `from` agent, enqueue a **failure notification** to the sender (see §7.6)
+3. If the message has a `from` agent, enqueue a **failure notification** to the sender (see §6.6)
 4. Move on to the next message in the inbox
 
 No retries, no dead-letter queue. Daemons provide full visibility — consumers can build retry logic externally if needed.
@@ -685,7 +645,7 @@ No retries, no dead-letter queue. Daemons provide full visibility — consumers 
 > [!NOTE]
 > Tool-level errors (e.g., `send_message` fails) are handled **inside** Nous — the error is returned as a tool result and the LLM can self-correct. Only unrecoverable errors that crash the entire `runAgent()` call reach the Process Manager.
 
-### 7.6. Failure Notifications
+### 6.6. Failure Notifications
 
 When a message processing fails and the original message has a `from` agent, Keryx automatically enqueues a failure notification back to the sender:
 
@@ -708,19 +668,20 @@ This keeps failure handling within the actor model — the sender receives a mes
 
 Messages from external sources (`from: null`) or system messages do not trigger failure notifications — only agent-to-agent messages do. Failure details are always available to daemons via the `onPostActivation` hook.
 
-## 8. Technology Stack
+## 7. Technology Stack
 
 | Component | Technology |
 |---|---|
 | Language | TypeScript (Node.js) |
 | Agent runtime | Nous SDK (`@elfenlabs/nous`) |
 | Package | `@elfenlabs/keryx` |
-| Database | PostgreSQL |
+| Storage | In-memory (zero external dependencies) |
 | Process model | Single Node.js process, serial per-agent |
 
-## 9. Out of Scope (v1)
+## 8. Out of Scope (v1)
 
 - **Multi-node / distributed orchestration** — single process for now
+- **Persistent storage adapter** — in-memory only for v1; pluggable store interface planned
 - **HTTP API** — programmatic API only
 - **Agent hot-reload** — restart to pick up config changes
 - **Parallel per-agent execution** — serial inbox processing per agent

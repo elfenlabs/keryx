@@ -32,7 +32,7 @@ Think of it as an **OS for agents**:
 
 ## Features
 
-- **Message bus** — PostgreSQL-backed inbox per agent with priority queuing
+- **Message bus** — in-memory inbox per agent with priority queuing
 - **Process manager** — spawn-on-demand, serial per-agent, concurrent across agents
 - **Daemon middleware** — lifecycle hooks for tool provisioning, observability, and more
 - **Context persistence** — configurable per-agent stateful/stateless execution
@@ -45,7 +45,6 @@ Think of it as an **OS for agents**:
 import { createKeryx, loggerd } from '@elfenlabs/keryx'
 
 const kx = await createKeryx({
-  db: 'postgres://localhost:5432/keryx',
   daemons: [loggerd()],
   agents: [
     {
@@ -137,7 +136,6 @@ No config key = no tools injected. This minimizes context window usage.
 ## Requirements
 
 - Node.js 22+
-- PostgreSQL 15+
 
 ## License
 
