@@ -31,9 +31,9 @@ Keryx exists for everything Nous can't do alone:
 | Synchronous sub-agent calls | **Nous** (tool call = sub-agent) |
 | Asynchronous agent-to-agent messaging | **Keryx** |
 | Parallel agent execution | **Keryx** |
-| Scheduled/cron-triggered agents | **User-space** (`kx.send()` on a timer) |
-| External system → agent communication | **Keryx** |
 | Agent lifecycle management | **Keryx** |
+| Scheduled/cron-triggered agents | **Keryx Daemons** (e.g. `crond`) |
+| External system → agent communication | **Keryx Daemons** (e.g. `webhookd`, `telegramd`) |
 
 ## 2. Core Concepts
 
@@ -61,7 +61,6 @@ type AgentDefinition = {
   instruction: string              // system prompt (Nous's `instruction`)
   provider: ProviderConfig         // LLM backend config
   tools?: Tool[]                   // static user-injected tools (Nous Tool instances)
-  persistContext?: boolean         // default: false (stateless)
   config?: Record<string, unknown> // per-daemon scoped config, keyed by daemon ID
 
   // Keryx injects these automatically:
@@ -149,24 +148,32 @@ Agents do **not** run continuously. They are spawned when messages arrive and ex
    ├─ YES + force=false → message sits in queue (processed after current work)
    └─ NO → spawn new Nous instance:
        a. Load agent definition from Registry
-       b. If persistContext: restore serialized context; else: fresh context
-       c. Run onPreActivation hooks (daemons inject tools + prompt segments)
+       b. Create fresh Nous context
+       c. Run onPreActivation hooks (daemons inject tools + prompt segments, restore context)
        d. Merge: send_message + static agent tools + daemon-provisioned tools
        e. Inject system prompt addendum (identity, registry, daemon segments, current message)
        f. Push inbox message as user message into context
        g. Run Nous loop: await runAgent({ ctx, provider, instruction, tools, signal })
-       h. Run onPostActivation hooks
-       i. If persistContext: serialize and store context
+       h. Run onPostActivation hooks (persist context, cleanup)
        j. Check inbox for more messages → repeat from (c) or exit
 ```
 
-### 3.3. Context Persistence (Per-Agent)
+### 3.3. Context Persistence (Daemon)
 
-Context persistence is **configurable per agent** via the `persistContext` flag.
+By default, each activation starts with a **fresh Nous context**. The agent only sees the current message.
 
-- **`persistContext: false` (default):** Each activation starts with a fresh Nous context. The agent only sees the current message. Ideal for stateless workers (file processors, fetchers, converters).
+For agents that need memory across activations, use the `contextd` daemon (§5.7). The daemon restores context during `onPreActivation` and persists it during `onPostActivation`.
 
-- **`persistContext: true`:** Context is serialized after each activation and restored on the next. The agent accumulates conversation history across activations. Nous's eviction strategy keeps it bounded. Ideal for coordinators and user-facing agents that need situational awareness.
+```typescript
+{
+  id: 'manager',
+  config: {
+    'context': { persist: true },   // opt-in via daemon config
+  },
+}
+```
+
+Since context persistence is a daemon, the pipeline composes naturally — other daemons can intercept and transform the context before persistence (e.g., redacting sensitive data, stripping thinking tokens).
 
 > [!NOTE]
 > Context persistence is private to a single agent. For shared state across agents, inject your own coordination tools (ledgers, shared databases, etc.).
@@ -236,7 +243,7 @@ Keryx provides a single built-in layer of memory. Additional layers are user-inj
 
 | Layer | Scope | Persistence | Mutability | Owner |
 |---|---|---|---|---|
-| **Nous context** | Private to one agent | Per-agent (`persistContext`) | Mutable (eviction) | Single agent |
+| **Nous context** | Private to one agent | Per-agent (via `contextd` daemon) | Mutable (eviction) | Single agent |
 | **User-injected** | Depends on tool | Depends on tool | Depends on tool | User's choice |
 
 ## 5. Daemons
@@ -376,6 +383,7 @@ Keryx ships common daemons in the package:
 | Daemon | Description |
 |---|---|
 | **`loggerd`** | Terminal logger for development feedback |
+| **`contextd`** | Persists and restores Nous context between activations |
 
 ```typescript
 import { createKeryx, loggerd } from '@elfenlabs/keryx'
@@ -424,7 +432,7 @@ Since activation is reducer-style (rebuild from scratch every time), runtime cha
 
 ## 6. Database Schema
 
-All Keryx state lives in PostgreSQL. Three tables.
+All Keryx state lives in PostgreSQL. Two tables.
 
 ```sql
 -- Agent registry (could also be file-based config loaded at startup)
@@ -433,7 +441,6 @@ CREATE TABLE agents (
   name            TEXT NOT NULL,
   instruction     TEXT NOT NULL,
   provider_config JSONB NOT NULL,
-  persist_context BOOLEAN NOT NULL DEFAULT FALSE,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -460,13 +467,6 @@ CREATE TABLE messages (
 CREATE INDEX idx_messages_inbox ON messages(
   to_agent, priority DESC, created_at ASC
 ) WHERE claimed_at IS NULL AND failed_at IS NULL AND discarded_at IS NULL;
-
--- Persisted context (only for agents with persist_context = true)
-CREATE TABLE agent_contexts (
-  agent_id        TEXT PRIMARY KEY REFERENCES agents(id),
-  context_data    JSONB NOT NULL,
-  updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
 ```
 
 ## 7. Programmatic API
@@ -485,8 +485,8 @@ const kx = await createKeryx({
       name: 'Manager',
       instruction: 'You coordinate tasks and communicate with the user.',
       provider: { url: 'http://localhost:11434', model: 'qwen3:8b' },
-      persistContext: true,
       config: {
+        'context': { persist: true },
         'thesauros': { mode: 'read-write' },
       },
     },
@@ -495,7 +495,7 @@ const kx = await createKeryx({
       name: 'PDF Processor',
       instruction: 'You split PDFs into readable markdown chapters.',
       provider: { url: 'https://api.openai.com', model: 'gpt-4o', apiKey: '...' },
-      // persistContext defaults to false (stateless worker)
+      // stateless worker — no context config needed
     },
   ],
 })
@@ -618,9 +618,9 @@ Process Manager
             ├─ YES + force=false → skip (will be picked up after current work)
             └─ NO  → claim message (SET claimed_at = NOW())
 3. PREPARE: Load agent definition from registry
-            If persistContext: restore context from agent_contexts
-            Else: create fresh context
+            Create fresh context
             Run onPreActivation on all daemons (in order)
+            (contextd restores saved context if configured)
             Build tool set: static agent tools + daemon tools + send_message
             Build tool-to-daemon routing map
             Create AbortController, store in map
@@ -629,8 +629,8 @@ Process Manager
             Tool calls routed via tool-to-daemon map
 5. FINISH:  On success:
               - SET completed_at = NOW()
-              - If persistContext: serialize and save context
               - Run onPostActivation on all daemons
+              (contextd saves context if configured)
             On abort (AgentAbortError):
               - SET discarded_at = NOW()
               - Run onPostActivation on all daemons

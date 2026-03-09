@@ -59,8 +59,8 @@ const kx = await createKeryx({
       name: 'Manager',
       instruction: 'You coordinate the team. Delegate tasks to other agents.',
       provider: { model: 'gpt-4o', apiKey: process.env.OPENAI_API_KEY },
-      persistContext: true,
       config: {
+        'context': { persist: true },
         'thesauros': { mode: 'read-write' },
       },
     },
