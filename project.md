@@ -393,7 +393,24 @@ Output:
 [summarizer] → "Here is the summary: ..."  (steps: 2, tokens: 3920)
 ```
 
-### 5.8. Examples
+### 5.8. Runtime Registration
+
+Daemons passed to `createKeryx({ daemons: [...] })` are registered at startup. Additional daemons can be registered or deregistered at runtime via the `kx.daemons` namespace:
+
+```typescript
+// Register at runtime — participates in the next activation
+kx.daemons.register(telegramDaemon)
+
+// Deregister — removed from the next activation
+kx.daemons.deregister('telegram')
+
+// List active daemons
+kx.daemons.list()  // → [{ id: 'loggerd', order: 0 }, { id: 'thesauros', order: 10 }]
+```
+
+Since activation is reducer-style (rebuild from scratch every time), runtime changes take effect on the very next activation with zero coordination.
+
+### 5.9. Examples
 
 | Daemon | Provides Tools | Pushes Messages | Description |
 |---|---|---|---|
@@ -491,6 +508,10 @@ const summary = await kx.request({ to: 'manager', body: 'What tasks are running?
 
 // Force interrupt
 await kx.send({ to: 'manager', body: 'STOP', force: true })
+
+// Runtime daemon registration
+kx.daemons.register(telegramDaemon)
+kx.daemons.list()  // → active daemons
 
 // Start Keryx (begins polling inboxes)
 await kx.start()
