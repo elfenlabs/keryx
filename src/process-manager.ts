@@ -18,6 +18,7 @@ import { Inbox } from './inbox.js'
 import { Registry } from './registry.js'
 import { DaemonManager } from './daemon.js'
 import { createSendMessageTool, type ReplyChannelMap } from './tools/send-message.js'
+import { createAskAgentTool } from './tools/ask-agent.js'
 import { buildPromptAddendum } from './prompt.js'
 
 export class ProcessManager {
@@ -171,16 +172,23 @@ export class ProcessManager {
       // Since hooks run in order, we can associate tools with the daemon that added them
     }
 
-    // Create the send_message tool for this activation
+    // Create the send_message and ask_agent tools for this activation
     const sendMessageTool = createSendMessageTool({
       fromAgentId: agentId,
       inbox: this.inbox,
       replyChannels: this.replyChannels,
     })
 
-    // Merge all tools: send_message + static agent tools + daemon tools
+    const askAgentTool = createAskAgentTool({
+      fromAgentId: agentId,
+      inbox: this.inbox,
+      registry: this.registry,
+      replyChannels: this.replyChannels,
+    })
+
+    // Merge all tools: send_message + ask_agent + static agent tools + daemon tools
     const staticTools = agentDef.tools ?? []
-    const allTools = [sendMessageTool, ...staticTools, ...daemonTools]
+    const allTools = [sendMessageTool, askAgentTool, ...staticTools, ...daemonTools]
 
     // Build tool routing: which tools belong to which daemon
     for (const t of daemonTools) {

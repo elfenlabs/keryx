@@ -42,6 +42,11 @@ export class DaemonManager {
     return this.daemons.map(d => ({ id: d.id, order: d.order }))
   }
 
+  /** List full daemon definitions (for lifecycle hooks) */
+  listDefinitions(): DaemonDefinition[] {
+    return [...this.daemons]
+  }
+
   /** Run onMessageReceived on all daemons in order */
   async runOnMessageReceived(ctx: MessageContext): Promise<void> {
     for (const daemon of this.daemons) {

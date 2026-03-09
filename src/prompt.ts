@@ -19,7 +19,7 @@ export function buildPromptAddendum(opts: {
   const lines: string[] = []
 
   // Identity
-  lines.push(`You are agent "${agentId}" (${agentName}). You communicate with other agents using the send_message tool.`)
+  lines.push(`You are agent "${agentId}" (${agentName}). You communicate with other agents using the send_message (fire-and-forget) and ask_agent (blocking request-reply) tools.`)
   lines.push('')
 
   // Registry

@@ -12,6 +12,7 @@ export { createKeryx } from './keryx.js'
 // Built-in daemons
 export { loggerd } from './daemons/loggerd.js'
 export { contextd } from './daemons/contextd.js'
+export { crond } from './daemons/crond.js'
 
 // Types
 export type {
@@ -31,3 +32,4 @@ export type {
 
 export type { ContextStorage } from './daemons/contextd.js'
 export type { LoggerdOptions } from './daemons/loggerd.js'
+export type { CronJob, CrondOptions } from './daemons/crond.js'

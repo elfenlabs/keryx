@@ -85,6 +85,8 @@ export type PostActivationContext = {
 export type DaemonDefinition = {
   id: string
   order: number
+  onStart?: (kx: KeryxInstance) => void | Promise<void>
+  onStop?: () => void | Promise<void>
   onMessageReceived?: (ctx: MessageContext) => void | Promise<void>
   onPreActivation?: (ctx: ActivationContext) => void | Promise<void>
   onToolCall?: (ctx: ToolCallContext) => unknown | Promise<unknown>

@@ -121,13 +121,23 @@ export function createKeryx(config: KeryxConfig): KeryxInstance {
       })
     },
 
-    /** Start polling inboxes */
+    /** Start polling inboxes and daemon background processes */
     start(): void {
+      // Start daemon background processes (in order)
+      for (const d of daemonManager.listDefinitions()) {
+        if (d.onStart) d.onStart(instance)
+      }
       pm.start()
     },
 
-    /** Stop polling and drain active work */
+    /** Stop daemon background processes and drain active work */
     async stop(): Promise<void> {
+      // Stop daemon background processes (reverse order)
+      const defs = daemonManager.listDefinitions()
+      for (let i = defs.length - 1; i >= 0; i--) {
+        const d = defs[i]!
+        if (d.onStop) await d.onStop()
+      }
       await pm.stop()
     },
 
