@@ -35,32 +35,33 @@ Think of it as an **OS for agents**:
 - **Message bus** — in-memory inbox per agent with priority queuing
 - **Process manager** — spawn-on-demand, serial per-agent, concurrent across agents
 - **Daemon middleware** — lifecycle hooks for tool provisioning, observability, and more
-- **Context persistence** — configurable per-agent stateful/stateless execution
+- **Context persistence** — configurable per-agent stateful/stateless execution via `contextd`
 - **Force interrupts** — abort running agents via `AbortSignal`
 - **Tool agnostic** — static tools + daemon-provisioned tools per agent
 
 ## Quick Start
 
 ```typescript
-import { createKeryx, loggerd } from '@elfenlabs/keryx'
+import { createKeryx, loggerd, contextd } from '@elfenlabs/keryx'
+import { createProvider } from '@elfenlabs/nous'
 
-const kx = await createKeryx({
-  daemons: [loggerd()],
+const kx = createKeryx({
+  createProvider: (config) => createProvider({ url: config.url, model: config.model }),
+  daemons: [loggerd(), contextd()],
   agents: [
     {
       id: 'greeter',
       name: 'Greeter',
       instruction: 'You are a friendly greeter. Reply to every message warmly.',
-      provider: { model: 'gpt-4o', apiKey: process.env.OPENAI_API_KEY },
+      provider: { url: 'https://api.openai.com/v1', model: 'gpt-4o' },
     },
     {
       id: 'manager',
       name: 'Manager',
       instruction: 'You coordinate the team. Delegate tasks to other agents.',
-      provider: { model: 'gpt-4o', apiKey: process.env.OPENAI_API_KEY },
+      provider: { url: 'https://api.openai.com/v1', model: 'gpt-4o' },
       config: {
         'context': { persist: true },
-        'thesauros': { mode: 'read-write' },
       },
     },
   ],
@@ -72,8 +73,8 @@ await kx.send({ to: 'greeter', body: 'Hello!' })
 // Request-reply
 const response = await kx.request({ to: 'manager', body: 'Status report?' })
 
-// Start processing
-await kx.start()
+// Start background polling
+kx.start()
 ```
 
 ## Daemons
@@ -124,18 +125,25 @@ Agents declare per-daemon capabilities via `config`:
 
 No config key = no tools injected. This minimizes context window usage.
 
-### Common Daemons
+### Built-in Daemons
 
-| Daemon | Provides Tools | Pushes Messages |
-|---|---|---|
-| **loggerd** | ✗ | ✗ |
-| **crond** | ✗ | ✓ |
-| **thesauros** | ✓ | ✗ |
-| **telegramd** | ✓ | ✓ |
+| Daemon | Purpose | Provides Tools | Pushes Messages |
+|---|---|---|---|
+| **loggerd** | Terminal logging for development observability | ✗ | ✗ |
+| **contextd** | Persist and restore Nous context between activations | ✗ | ✗ |
+
+### Planned Daemons
+
+| Daemon | Purpose | Provides Tools | Pushes Messages |
+|---|---|---|---|
+| **crond** | Scheduled message delivery | ✗ | ✓ |
+| **thesauros** | Knowledge graph integration | ✓ | ✗ |
+| **telegramd** | Telegram bot interface | ✓ | ✓ |
 
 ## Requirements
 
-- Node.js 22+
+- Node.js 22+ or Bun 1.0+
+- `@elfenlabs/nous` (peer dependency)
 
 ## License
 
