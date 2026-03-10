@@ -14,6 +14,7 @@ export { loggerd } from './daemons/loggerd.js'
 export { contextd } from './daemons/contextd.js'
 export { crond } from './daemons/crond.js'
 export { keryxd } from './daemons/keryxd.js'
+export { artifactd } from './daemons/artifactd.js'
 
 // Types
 export type {
@@ -35,3 +36,4 @@ export type { ContextStorage } from './daemons/contextd.js'
 export type { LoggerdOptions } from './daemons/loggerd.js'
 export type { CronJob, CrondOptions } from './daemons/crond.js'
 export type { KeryxdConfig } from './daemons/keryxd.js'
+export type { ArtifactdOptions, ArtifactStorage, ArtifactMeta, ArtifactInfo } from './daemons/artifactd.js'
