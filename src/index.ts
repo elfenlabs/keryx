@@ -19,7 +19,6 @@ export { keryxd } from './daemons/keryxd.js'
 export type {
   Message,
   AgentDefinition,
-  ProviderConfig,
   DaemonDefinition,
   MessageContext,
   ActivationContext,

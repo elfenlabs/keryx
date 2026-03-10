@@ -13,7 +13,6 @@ function makeAgent(id: string, name: string): AgentDefinition {
     id,
     name,
     instruction: `You are ${name}.`,
-    provider: { url: 'http://mock', model: 'mock' },
   }
 }
 
@@ -24,6 +23,7 @@ function wait(ms = 50): Promise<void> {
 describe('agent_ask tool', () => {
   test('agent uses agent_ask to get a response from another agent', async () => {
     let analystResult = ''
+    let analystCallCount = 0
 
     const kx = createKeryx({
       agents: [
@@ -31,48 +31,47 @@ describe('agent_ask tool', () => {
         makeAgent('researcher', 'Researcher'),
       ],
       pollingInterval: 10,
-      createProvider: () => {
-        let callCount = 0
-        return {
-          generate: async (params: any) => {
-            const systemMsg = params.messages.find((m: any) => m.role === 'system')
-            const userMsgs = params.messages.filter((m: any) => m.role === 'user')
-            const lastUserMsg = userMsgs[userMsgs.length - 1]?.content ?? ''
+      defaultProvider: {
+        generate: async (params: any) => {
+          const systemMsg = params.messages.find((m: any) => m.role === 'system')
+          const hasToolResult = params.messages.some((m: any) => m.role === 'tool')
 
-            // Analyst: use agent_ask to query researcher
-            if (systemMsg.content.includes('agent "analyst"')) {
-              callCount++
-              if (callCount === 1) {
-                return {
-                  toolCalls: [{
-                    id: 'call-1',
-                    name: 'agent_ask',
-                    arguments: { to: 'researcher', body: 'What is the market trend?' },
-                  }],
-                }
-              }
-              // After tool result: capture and respond
-              const toolResult = params.messages.find((m: any) => m.role === 'tool')
-              analystResult = toolResult?.content ?? ''
-              return { content: 'Analysis complete.' }
-            }
-
-            // Researcher: reply via send_message to the replyTo channel
-            if (systemMsg.content.includes('agent "researcher"')) {
-              const replyMatch = systemMsg.content.match(/message_send with to="(ext-[^"]+)"/)
-              const replyTo = replyMatch?.[1] ?? 'unknown'
+          // Analyst: use agent_ask to query researcher
+          if (systemMsg.content.includes('agent "analyst"')) {
+            analystCallCount++
+            if (analystCallCount === 1) {
               return {
                 toolCalls: [{
-                  id: 'call-r1',
-                  name: 'message_send',
-                  arguments: { to: replyTo, body: 'Market is bullish on tech.' },
+                  id: 'call-1',
+                  name: 'agent_ask',
+                  arguments: { to: 'researcher', body: 'What is the market trend?' },
                 }],
               }
             }
+            // After tool result: capture and respond
+            const toolResult = params.messages.find((m: any) => m.role === 'tool')
+            analystResult = toolResult?.content ?? ''
+            return { content: 'Analysis complete.' }
+          }
 
-            return { content: 'ok' }
-          },
-        }
+          // Researcher: reply via message_send to the replyTo channel
+          if (systemMsg.content.includes('agent "researcher"')) {
+            if (hasToolResult) {
+              return { content: 'Replied.' }
+            }
+            const replyMatch = systemMsg.content.match(/message_send with to="(ext-[^"]+)"/)
+            const replyTo = replyMatch?.[1] ?? 'unknown'
+            return {
+              toolCalls: [{
+                id: 'call-r1',
+                name: 'message_send',
+                arguments: { to: replyTo, body: 'Market is bullish on tech.' },
+              }],
+            }
+          }
+
+          return { content: 'ok' }
+        },
       },
     })
 
@@ -86,30 +85,27 @@ describe('agent_ask tool', () => {
 
   test('agent_ask returns error for unknown agent', async () => {
     let toolResult = ''
+    let callCount = 0
 
     const kx = createKeryx({
       agents: [makeAgent('solo', 'Solo Agent')],
       pollingInterval: 10,
-      createProvider: () => {
-        let callCount = 0
-        return {
-          generate: async (params: any) => {
-            callCount++
-            if (callCount === 1) {
-              return {
-                toolCalls: [{
-                  id: 'call-1',
-                  name: 'agent_ask',
-                  arguments: { to: 'nonexistent', body: 'Hello?' },
-                }],
-              }
+      defaultProvider: {
+        generate: async (params: any) => {
+          callCount++
+          if (callCount === 1) {
+            return {
+              toolCalls: [{
+                id: 'call-1',
+                name: 'agent_ask',
+                arguments: { to: 'nonexistent', body: 'Hello?' },
+              }],
             }
-            // Capture tool result
-            const toolMsg = params.messages.find((m: any) => m.role === 'tool')
-            toolResult = toolMsg?.content ?? ''
-            return { content: 'handled error' }
-          },
-        }
+          }
+          const toolMsg = params.messages.find((m: any) => m.role === 'tool')
+          toolResult = toolMsg?.content ?? ''
+          return { content: 'handled error' }
+        },
       },
     })
 
@@ -123,29 +119,27 @@ describe('agent_ask tool', () => {
 
   test('agent_ask returns error when asking self', async () => {
     let toolResult = ''
+    let callCount = 0
 
     const kx = createKeryx({
       agents: [makeAgent('narcissist', 'Narcissist')],
       pollingInterval: 10,
-      createProvider: () => {
-        let callCount = 0
-        return {
-          generate: async (params: any) => {
-            callCount++
-            if (callCount === 1) {
-              return {
-                toolCalls: [{
-                  id: 'call-1',
-                  name: 'agent_ask',
-                  arguments: { to: 'narcissist', body: 'Talk to myself' },
-                }],
-              }
+      defaultProvider: {
+        generate: async (params: any) => {
+          callCount++
+          if (callCount === 1) {
+            return {
+              toolCalls: [{
+                id: 'call-1',
+                name: 'agent_ask',
+                arguments: { to: 'narcissist', body: 'Talk to myself' },
+              }],
             }
-            const toolMsg = params.messages.find((m: any) => m.role === 'tool')
-            toolResult = toolMsg?.content ?? ''
-            return { content: 'ok' }
-          },
-        }
+          }
+          const toolMsg = params.messages.find((m: any) => m.role === 'tool')
+          toolResult = toolMsg?.content ?? ''
+          return { content: 'ok' }
+        },
       },
     })
 
@@ -159,6 +153,7 @@ describe('agent_ask tool', () => {
 
   test('agent_ask times out against slow agent', async () => {
     let toolResult = ''
+    let callCount = 0
 
     const kx = createKeryx({
       agents: [
@@ -166,38 +161,33 @@ describe('agent_ask tool', () => {
         makeAgent('slow', 'Slow Agent'),
       ],
       pollingInterval: 10,
-      createProvider: () => {
-        let callCount = 0
-        return {
-          generate: async (params: any) => {
-            const systemMsg = params.messages.find((m: any) => m.role === 'system')
+      defaultProvider: {
+        generate: async (params: any) => {
+          const systemMsg = params.messages.find((m: any) => m.role === 'system')
 
-            // Impatient agent asks slow agent with very short timeout
-            if (systemMsg.content.includes('agent "impatient"')) {
-              callCount++
-              if (callCount === 1) {
-                return {
-                  toolCalls: [{
-                    id: 'call-1',
-                    name: 'agent_ask',
-                    arguments: { to: 'slow', body: 'Quick!', timeout: 100 },
-                  }],
-                }
+          if (systemMsg.content.includes('agent "impatient"')) {
+            callCount++
+            if (callCount === 1) {
+              return {
+                toolCalls: [{
+                  id: 'call-1',
+                  name: 'agent_ask',
+                  arguments: { to: 'slow', body: 'Quick!', timeout: 100 },
+                }],
               }
-              const toolMsg = params.messages.find((m: any) => m.role === 'tool')
-              toolResult = toolMsg?.content ?? ''
-              return { content: 'timed out' }
             }
+            const toolMsg = params.messages.find((m: any) => m.role === 'tool')
+            toolResult = toolMsg?.content ?? ''
+            return { content: 'timed out' }
+          }
 
-            // Slow agent: takes forever (never replies in time)
-            if (systemMsg.content.includes('agent "slow"')) {
-              await new Promise(r => setTimeout(r, 500))
-              return { content: 'too slow' }
-            }
+          if (systemMsg.content.includes('agent "slow"')) {
+            await new Promise(r => setTimeout(r, 500))
+            return { content: 'too slow' }
+          }
 
-            return { content: 'ok' }
-          },
-        }
+          return { content: 'ok' }
+        },
       },
     })
 
@@ -215,12 +205,12 @@ describe('agent_ask tool', () => {
     const kx = createKeryx({
       agents: [makeAgent('test', 'Test')],
       pollingInterval: 10,
-      createProvider: () => ({
+      defaultProvider: {
         generate: async (params: any) => {
           capturedTools = params.tools ?? []
           return { content: 'ok' }
         },
-      }),
+      },
     })
 
     kx.start()

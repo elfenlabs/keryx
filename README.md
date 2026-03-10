@@ -4,17 +4,6 @@
 
 Agent orchestrator — process manager and message bus for autonomous AI agents built on [Nous](https://github.com/elfenlabs/nous).
 
-```
-┌─────────────────────────────────────┐
-│         DRAKONYX (product)          │
-├──────────────────┬──────────────────┤
-│   THESAUROS      │     KERYX        │
-│  (knowledge)     │  (orchestration) │
-├──────────────────┴──────────────────┤
-│             NOUS (runtime)          │
-└─────────────────────────────────────┘
-```
-
 ## What is Keryx?
 
 Keryx is the missing middle layer between **Nous** (the agent runtime) and your application. It manages agent lifecycles, routes messages between inboxes, and provides the primitives for agents to communicate.
@@ -48,7 +37,7 @@ import { createKeryx, loggerd, contextd, crond } from '@elfenlabs/keryx'
 import { createProvider } from '@elfenlabs/nous'
 
 const kx = createKeryx({
-  createProvider: (config) => createProvider({ url: config.url, model: config.model }),
+  defaultProvider: createProvider({ url: 'https://api.openai.com/v1', model: 'gpt-4o' }),
   daemons: [
     loggerd(),
     contextd(),
@@ -62,8 +51,7 @@ const kx = createKeryx({
     {
       id: 'analyst',
       name: 'Analyst',
-      instruction: 'You coordinate research. Use ask_agent to query specialists.',
-      provider: { url: 'https://api.openai.com/v1', model: 'gpt-4o' },
+      instruction: 'You coordinate research. Use agent_ask to query specialists.',
       config: {
         'context': { persist: true },
       },
@@ -72,7 +60,6 @@ const kx = createKeryx({
       id: 'researcher',
       name: 'Researcher',
       instruction: 'You research topics and return detailed findings.',
-      provider: { url: 'https://api.openai.com/v1', model: 'gpt-4o' },
     },
   ],
 })

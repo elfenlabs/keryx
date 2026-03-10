@@ -12,7 +12,6 @@ import type {
   Message,
   ActivationContext,
   PostActivationContext,
-  ProviderConfig,
 } from './types.js'
 import type { Provider } from '@elfenlabs/nous'
 import { Inbox } from './inbox.js'
@@ -34,7 +33,7 @@ export class ProcessManager {
   private activeMessages = new Map<string, Message>()
   private pollingTimer: ReturnType<typeof setInterval> | null = null
   private pollingInterval: number
-  private createProvider: (config: ProviderConfig) => Provider
+  private defaultProvider: Provider
   private running = false
 
   // Callback for when inbox state changes (used to wake poller immediately)
@@ -46,14 +45,14 @@ export class ProcessManager {
     daemons: DaemonManager
     replyChannels: ReplyChannelMap
     pollingInterval: number
-    createProvider: (config: ProviderConfig) => Provider
+    defaultProvider: Provider
   }) {
     this.inbox = opts.inbox
     this.registry = opts.registry
     this.daemons = opts.daemons
     this.replyChannels = opts.replyChannels
     this.pollingInterval = opts.pollingInterval
-    this.createProvider = opts.createProvider
+    this.defaultProvider = opts.defaultProvider
   }
 
   // ── Observability (for keryxd) ──────────────────────────────────────
@@ -235,7 +234,7 @@ export class ProcessManager {
     this.abortControllers.set(agentId, abortController)
 
     // Create provider instance
-    const provider = this.createProvider(agentDef.provider)
+    const provider = agentDef.provider ?? this.defaultProvider
 
     let response: string | null = null
     let error: Error | null = null

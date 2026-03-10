@@ -29,19 +29,13 @@ export type Message = {
 
 // ── Agent Definition ────────────────────────────────────────────────────────
 
-/** Provider configuration for an agent's LLM backend */
-export type ProviderConfig = {
-  url: string
-  model: string
-  apiKey?: string
-}
-
 /** Static agent registration */
 export type AgentDefinition = {
   id: string
   name: string
   instruction: string
-  provider: ProviderConfig
+  /** Per-agent provider override. Falls back to KeryxConfig.defaultProvider. */
+  provider?: Provider
   tools?: Tool<any>[]
   config?: Record<string, Record<string, unknown>>
 }
@@ -101,8 +95,8 @@ export type KeryxConfig = {
   daemons?: DaemonDefinition[]
   /** Inbox polling interval in ms. Default: 100 */
   pollingInterval?: number
-  /** Factory for creating a Nous provider from agent config. User-supplied. */
-  createProvider: (config: ProviderConfig) => Provider
+  /** Default Nous provider used by all agents unless overridden. */
+  defaultProvider: Provider
 }
 
 /** Options for sending a message */

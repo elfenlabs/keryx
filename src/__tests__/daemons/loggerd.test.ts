@@ -14,7 +14,6 @@ function makeAgent(id: string, name: string): AgentDefinition {
     id,
     name,
     instruction: `You are ${name}.`,
-    provider: { url: 'http://mock', model: 'mock' },
   }
 }
 
@@ -30,9 +29,9 @@ describe('loggerd', () => {
       agents: [makeAgent('echo', 'Echo Agent')],
       daemons: [loggerd({ log: (...args: unknown[]) => logs.push(args.join(' ')) })],
       pollingInterval: 10,
-      createProvider: () => ({
+      defaultProvider: {
         generate: async () => ({ content: 'Hello back!' }),
-      }),
+      },
     })
 
     kx.start()
@@ -62,9 +61,9 @@ describe('loggerd', () => {
       agents: [makeAgent('fail', 'Fail Agent')],
       daemons: [loggerd({ log: (...args: unknown[]) => logs.push(args.join(' ')) })],
       pollingInterval: 10,
-      createProvider: () => ({
+      defaultProvider: {
         generate: async () => { throw new Error('Provider error') },
-      }),
+      },
     })
 
     kx.start()
@@ -85,9 +84,9 @@ describe('loggerd', () => {
       agents: [makeAgent('verbose', 'Verbose Agent')],
       daemons: [loggerd({ log: (...args: unknown[]) => logs.push(args.join(' ')) })],
       pollingInterval: 10,
-      createProvider: () => ({
+      defaultProvider: {
         generate: async () => ({ content: 'ok' }),
-      }),
+      },
     })
 
     kx.start()

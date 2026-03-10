@@ -54,7 +54,7 @@ export function createKeryx(config: KeryxConfig): KeryxInstance {
     daemons: daemonManager,
     replyChannels,
     pollingInterval,
-    createProvider: config.createProvider,
+    defaultProvider: config.defaultProvider,
   })
 
   // ── Public API ──────────────────────────────────────────────────────────

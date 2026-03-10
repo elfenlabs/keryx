@@ -14,7 +14,6 @@ function makeAgent(id: string, name: string, config?: Record<string, unknown>): 
     id,
     name,
     instruction: `You are ${name}.`,
-    provider: { url: 'http://mock', model: 'mock' },
     config,
   }
 }
@@ -34,12 +33,12 @@ describe('keryxd', () => {
       ],
       daemons: [keryxd()],
       pollingInterval: 10,
-      createProvider: () => ({
+      defaultProvider: {
         generate: async (params: any) => {
           capturedTools = params.tools ?? []
           return { content: 'ok' }
         },
-      }),
+      },
     })
 
     kx.start()
@@ -62,12 +61,12 @@ describe('keryxd', () => {
       ],
       daemons: [keryxd()],
       pollingInterval: 10,
-      createProvider: () => ({
+      defaultProvider: {
         generate: async (params: any) => {
           capturedTools = params.tools ?? []
           return { content: 'ok' }
         },
-      }),
+      },
     })
 
     kx.start()
@@ -89,12 +88,12 @@ describe('keryxd', () => {
       ],
       daemons: [keryxd()],
       pollingInterval: 10,
-      createProvider: () => ({
+      defaultProvider: {
         generate: async (params: any) => {
           capturedTools = params.tools ?? []
           return { content: 'ok' }
         },
-      }),
+      },
     })
 
     kx.start()
@@ -116,12 +115,12 @@ describe('keryxd', () => {
       ],
       daemons: [keryxd()],
       pollingInterval: 10,
-      createProvider: () => ({
+      defaultProvider: {
         generate: async (params: any) => {
           capturedTools = params.tools ?? []
           return { content: 'ok' }
         },
-      }),
+      },
     })
 
     kx.start()
@@ -137,6 +136,7 @@ describe('keryxd', () => {
   test('glob matching: prefix* matches correct agents', async () => {
     let flushResult = ''
     let deniedResult = ''
+    let callCount = 0
 
     const kx = createKeryx({
       agents: [
@@ -146,44 +146,41 @@ describe('keryxd', () => {
       ],
       daemons: [keryxd()],
       pollingInterval: 10,
-      createProvider: () => {
-        let callCount = 0
-        return {
-          generate: async (params: any) => {
-            const systemMsg = params.messages.find((m: any) => m.role === 'system')
-            if (systemMsg.content.includes('agent "admin"')) {
-              callCount++
-              if (callCount === 1) {
-                // Flush news-agent (should succeed — matches news-*)
-                return {
-                  toolCalls: [{
-                    id: 'call-1',
-                    name: 'inbox_flush',
-                    arguments: { id: 'news-agent' },
-                  }],
-                }
+      defaultProvider: {
+        generate: async (params: any) => {
+          const systemMsg = params.messages.find((m: any) => m.role === 'system')
+          if (systemMsg.content.includes('agent "admin"')) {
+            callCount++
+            if (callCount === 1) {
+              // Flush news-agent (should succeed — matches news-*)
+              return {
+                toolCalls: [{
+                  id: 'call-1',
+                  name: 'inbox_flush',
+                  arguments: { id: 'news-agent' },
+                }],
               }
-              if (callCount === 2) {
-                // Capture first tool result
-                const toolMsg = params.messages.find((m: any) => m.role === 'tool')
-                flushResult = toolMsg?.content ?? ''
-                // Flush analyst (should be denied — doesn't match news-*)
-                return {
-                  toolCalls: [{
-                    id: 'call-2',
-                    name: 'inbox_flush',
-                    arguments: { id: 'analyst' },
-                  }],
-                }
-              }
-              // Capture second tool result
-              const toolMsgs = params.messages.filter((m: any) => m.role === 'tool')
-              deniedResult = toolMsgs[toolMsgs.length - 1]?.content ?? ''
-              return { content: 'done' }
             }
-            return { content: 'ok' }
-          },
-        }
+            if (callCount === 2) {
+              // Capture first tool result
+              const toolMsg = params.messages.find((m: any) => m.role === 'tool')
+              flushResult = toolMsg?.content ?? ''
+              // Flush analyst (should be denied — doesn't match news-*)
+              return {
+                toolCalls: [{
+                  id: 'call-2',
+                  name: 'inbox_flush',
+                  arguments: { id: 'analyst' },
+                }],
+              }
+            }
+            // Capture second tool result
+            const toolMsgs = params.messages.filter((m: any) => m.role === 'tool')
+            deniedResult = toolMsgs[toolMsgs.length - 1]?.content ?? ''
+            return { content: 'done' }
+          }
+          return { content: 'ok' }
+        },
       },
     })
 
@@ -199,6 +196,7 @@ describe('keryxd', () => {
 
   test('inbox_read returns pending messages', async () => {
     let readResult = ''
+    let callCount = 0
 
     const kx = createKeryx({
       agents: [
@@ -207,30 +205,27 @@ describe('keryxd', () => {
       ],
       daemons: [keryxd()],
       pollingInterval: 10,
-      createProvider: () => {
-        let callCount = 0
-        return {
-          generate: async (params: any) => {
-            const systemMsg = params.messages.find((m: any) => m.role === 'system')
-            if (systemMsg.content.includes('agent "monitor"')) {
-              callCount++
-              if (callCount === 1) {
-                return {
-                  toolCalls: [{
-                    id: 'call-1',
-                    name: 'inbox_read',
-                    arguments: { id: 'worker' },
-                  }],
-                }
+      defaultProvider: {
+        generate: async (params: any) => {
+          const systemMsg = params.messages.find((m: any) => m.role === 'system')
+          if (systemMsg.content.includes('agent "monitor"')) {
+            callCount++
+            if (callCount === 1) {
+              return {
+                toolCalls: [{
+                  id: 'call-1',
+                  name: 'inbox_read',
+                  arguments: { id: 'worker' },
+                }],
               }
-              const toolMsg = params.messages.find((m: any) => m.role === 'tool')
-              readResult = toolMsg?.content ?? ''
-              return { content: 'done' }
             }
-            // Worker: just process normally
-            return { content: 'ok' }
-          },
-        }
+            const toolMsg = params.messages.find((m: any) => m.role === 'tool')
+            readResult = toolMsg?.content ?? ''
+            return { content: 'done' }
+          }
+          // Worker: just process normally
+          return { content: 'ok' }
+        },
       },
     })
 
@@ -251,6 +246,7 @@ describe('keryxd', () => {
 
   test('agent_status returns error for agent outside read permissions', async () => {
     let statusResult = ''
+    let callCount = 0
 
     const kx = createKeryx({
       agents: [
@@ -260,29 +256,26 @@ describe('keryxd', () => {
       ],
       daemons: [keryxd()],
       pollingInterval: 10,
-      createProvider: () => {
-        let callCount = 0
-        return {
-          generate: async (params: any) => {
-            const systemMsg = params.messages.find((m: any) => m.role === 'system')
-            if (systemMsg.content.includes('agent "limited"')) {
-              callCount++
-              if (callCount === 1) {
-                return {
-                  toolCalls: [{
-                    id: 'call-1',
-                    name: 'agent_status',
-                    arguments: { id: 'secret' },
-                  }],
-                }
+      defaultProvider: {
+        generate: async (params: any) => {
+          const systemMsg = params.messages.find((m: any) => m.role === 'system')
+          if (systemMsg.content.includes('agent "limited"')) {
+            callCount++
+            if (callCount === 1) {
+              return {
+                toolCalls: [{
+                  id: 'call-1',
+                  name: 'agent_status',
+                  arguments: { id: 'secret' },
+                }],
               }
-              const toolMsg = params.messages.find((m: any) => m.role === 'tool')
-              statusResult = toolMsg?.content ?? ''
-              return { content: 'done' }
             }
-            return { content: 'ok' }
-          },
-        }
+            const toolMsg = params.messages.find((m: any) => m.role === 'tool')
+            statusResult = toolMsg?.content ?? ''
+            return { content: 'done' }
+          }
+          return { content: 'ok' }
+        },
       },
     })
 

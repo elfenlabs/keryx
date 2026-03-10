@@ -14,7 +14,6 @@ function makeAgent(id: string, name: string): AgentDefinition {
     id,
     name,
     instruction: `You are ${name}.`,
-    provider: { url: 'http://mock', model: 'mock' },
   }
 }
 
@@ -39,14 +38,14 @@ describe('crond', () => {
         }),
       ],
       pollingInterval: 10,
-      createProvider: () => ({
+      defaultProvider: {
         generate: async (params: any) => {
           const userMsgs = params.messages.filter((m: any) => m.role === 'user')
           const lastMsg = userMsgs[userMsgs.length - 1]?.content ?? ''
           receivedBodies.push(lastMsg)
           return { content: 'Report generated.' }
         },
-      }),
+      },
     })
 
     kx.start()
@@ -76,7 +75,7 @@ describe('crond', () => {
         }),
       ],
       pollingInterval: 10,
-      createProvider: () => ({
+      defaultProvider: {
         generate: async (params: any) => {
           const systemMsg = params.messages.find((m: any) => m.role === 'system')
           if (systemMsg.content.includes('agent "daily"')) {
@@ -86,7 +85,7 @@ describe('crond', () => {
           }
           return { content: 'done' }
         },
-      }),
+      },
     })
 
     kx.start()
@@ -117,12 +116,12 @@ describe('crond', () => {
         }),
       ],
       pollingInterval: 10,
-      createProvider: () => ({
+      defaultProvider: {
         generate: async () => {
           callCount++
           return { content: 'ticked' }
         },
-      }),
+      },
     })
 
     kx.start()
@@ -153,7 +152,7 @@ describe('crond', () => {
         }),
       ],
       pollingInterval: 10,
-      createProvider: () => ({
+      defaultProvider: {
         generate: async (params: any) => {
           const systemMsg = params.messages.find((m: any) => m.role === 'system')
           // Metadata is passed in the system prompt message context
@@ -164,7 +163,7 @@ describe('crond', () => {
           }
           return { content: 'ok' }
         },
-      }),
+      },
     })
 
     kx.start()

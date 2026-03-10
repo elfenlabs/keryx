@@ -14,7 +14,6 @@ function makeAgent(id: string, name: string, config?: Record<string, Record<stri
     id,
     name,
     instruction: `You are ${name}.`,
-    provider: { url: 'http://mock', model: 'mock' },
     config,
   }
 }
@@ -33,14 +32,14 @@ describe('contextd', () => {
       })],
       daemons: [contextd()],
       pollingInterval: 10,
-      createProvider: () => ({
+      defaultProvider: {
         generate: async (params: any) => {
           // Track what messages the agent sees
           const userMsgs = params.messages.filter((m: any) => m.role === 'user')
           allMessages.push(userMsgs.map((m: any) => m.content))
           return { content: 'Noted.' }
         },
-      }),
+      },
     })
 
     kx.start()
@@ -70,13 +69,13 @@ describe('contextd', () => {
       agents: [makeAgent('stateless', 'Stateless Agent')], // no config
       daemons: [contextd()],
       pollingInterval: 10,
-      createProvider: () => ({
+      defaultProvider: {
         generate: async (params: any) => {
           const userMsgs = params.messages.filter((m: any) => m.role === 'user')
           allMessages.push(userMsgs.map((m: any) => m.content))
           return { content: 'Done.' }
         },
-      }),
+      },
     })
 
     kx.start()
@@ -104,7 +103,7 @@ describe('contextd', () => {
       })],
       daemons: [contextd()],
       pollingInterval: 10,
-      createProvider: () => ({
+      defaultProvider: {
         generate: async (params: any) => {
           callCount++
           const userMsgs = params.messages.filter((m: any) => m.role === 'user')
@@ -116,7 +115,7 @@ describe('contextd', () => {
           }
           return { content: 'ok' }
         },
-      }),
+      },
     })
 
     kx.start()

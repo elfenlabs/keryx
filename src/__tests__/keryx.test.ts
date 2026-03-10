@@ -37,7 +37,7 @@ function makeAgent(id: string, name: string, overrides?: Partial<AgentDefinition
     id,
     name,
     instruction: `You are ${name}.`,
-    provider: { url: 'http://mock', model: 'mock' },
+
     ...overrides,
   }
 }
@@ -68,16 +68,16 @@ describe('Keryx Integration', () => {
       agents,
       daemons,
       pollingInterval: 10,
-      createProvider: (config) => {
-        return createMockProvider((params) => {
+      defaultProvider: {
+        generate: async (params: any) => {
           // Record the call
           providerCalls.push({
-            agentId: config.model, // We'll use model field to track which agent
+            agentId: 'agent',
             messages: params.messages,
             tools: params.tools ?? [],
           })
 
-          // Look up behavior by the last user message (which contains the agent's message body)
+          // Look up behavior by the last user message
           const userMsgs = params.messages.filter((m: any) => m.role === 'user')
           const lastUserMsg = userMsgs[userMsgs.length - 1]?.content ?? ''
 
@@ -90,7 +90,7 @@ describe('Keryx Integration', () => {
 
           // Default: simple text response
           return { content: `Processed: ${lastUserMsg}` }
-        })
+        },
       },
     })
 
@@ -132,33 +132,31 @@ describe('Keryx Integration', () => {
   test('request() returns agent response via ephemeral channel', async () => {
     // The agent needs to call message_send with the replyTo channel
     providerBehaviors = new Map()
+    let replyCallCount = 0
 
     const kx = createKeryx({
       agents: [makeAgent('responder', 'Responder')],
       pollingInterval: 10,
-      createProvider: () => {
-        let callCount = 0
-        return {
-          generate: async (params: any) => {
-            callCount++
-            // First call: make a tool call to reply via message_send
-            if (callCount === 1) {
-              // Extract the replyTo from the system prompt
-              const systemMsg = params.messages.find((m: any) => m.role === 'system')
-              const replyMatch = systemMsg.content.match(/message_send with to="(ext-[^"]+)"/)
-              const replyTo = replyMatch?.[1] ?? 'unknown'
-              return {
-                toolCalls: [{
-                  id: 'call-1',
-                  name: 'message_send',
-                  arguments: { to: replyTo, body: 'The answer is 42' },
-                }],
-              }
+      defaultProvider: {
+        generate: async (params: any) => {
+          replyCallCount++
+          // First call: make a tool call to reply via message_send
+          if (replyCallCount === 1) {
+            // Extract the replyTo from the system prompt
+            const systemMsg = params.messages.find((m: any) => m.role === 'system')
+            const replyMatch = systemMsg.content.match(/message_send with to="(ext-[^"]+)"/)
+            const replyTo = replyMatch?.[1] ?? 'unknown'
+            return {
+              toolCalls: [{
+                id: 'call-1',
+                name: 'message_send',
+                arguments: { to: replyTo, body: 'The answer is 42' },
+              }],
             }
-            // Second call (after tool result): final response
-            return { content: 'Done.' }
-          },
-        }
+          }
+          // Second call (after tool result): final response
+          return { content: 'Done.' }
+        },
       },
     })
 
@@ -173,7 +171,7 @@ describe('Keryx Integration', () => {
     const kx = createKeryx({
       agents: [makeAgent('slow', 'Slow Agent')],
       pollingInterval: 10,
-      createProvider: () => ({
+      defaultProvider: {
         generate: async (params: any) => {
           // Simulate a slow agent — but respect abort signal
           const signal = params.signal as AbortSignal | undefined
@@ -185,7 +183,7 @@ describe('Keryx Integration', () => {
           }
           return { content: 'too late' }
         },
-      }),
+      },
     })
 
     kx.start()
@@ -211,6 +209,7 @@ describe('Keryx Integration', () => {
 
   test('agent A sends message to agent B via message_send tool', async () => {
     const agentBReceived: string[] = []
+    let msgCallCount = 0
 
     const kx = createKeryx({
       agents: [
@@ -218,34 +217,31 @@ describe('Keryx Integration', () => {
         makeAgent('agent-b', 'Agent B'),
       ],
       pollingInterval: 10,
-      createProvider: (config) => {
-        let callCount = 0
-        return {
-          generate: async (params: any) => {
-            const userMsgs = params.messages.filter((m: any) => m.role === 'user')
-            const lastUserMsg = userMsgs[userMsgs.length - 1]?.content ?? ''
-            const systemMsg = params.messages.find((m: any) => m.role === 'system')
+      defaultProvider: {
+        generate: async (params: any) => {
+          const userMsgs = params.messages.filter((m: any) => m.role === 'user')
+          const lastUserMsg = userMsgs[userMsgs.length - 1]?.content ?? ''
+          const systemMsg = params.messages.find((m: any) => m.role === 'system')
 
-            // Agent A: forward message to Agent B via tool call
-            if (systemMsg.content.includes('agent "agent-a"')) {
-              callCount++
-              if (callCount === 1) {
-                return {
-                  toolCalls: [{
-                    id: 'call-1',
-                    name: 'message_send',
-                    arguments: { to: 'agent-b', body: 'Hello from A!' },
-                  }],
-                }
+          // Agent A: forward message to Agent B via tool call
+          if (systemMsg.content.includes('agent "agent-a"')) {
+            msgCallCount++
+            if (msgCallCount === 1) {
+              return {
+                toolCalls: [{
+                  id: 'call-1',
+                  name: 'message_send',
+                  arguments: { to: 'agent-b', body: 'Hello from A!' },
+                }],
               }
-              return { content: 'Forwarded to B.' }
             }
+            return { content: 'Forwarded to B.' }
+          }
 
-            // Agent B: just respond
-            agentBReceived.push(lastUserMsg)
-            return { content: 'Got it from A.' }
-          },
-        }
+          // Agent B: just respond
+          agentBReceived.push(lastUserMsg)
+          return { content: 'Got it from A.' }
+        },
       },
     })
 
@@ -268,13 +264,13 @@ describe('Keryx Integration', () => {
         makeAgent('worker', 'Worker'),
       ],
       pollingInterval: 10,
-      createProvider: () => ({
+      defaultProvider: {
         generate: async (params: any) => {
           const systemMsg = params.messages.find((m: any) => m.role === 'system')
           capturedSystemPrompt = systemMsg.content
           return { content: 'ok' }
         },
-      }),
+      },
     })
 
     kx.start()
@@ -297,12 +293,12 @@ describe('Keryx Integration', () => {
     const kx = createKeryx({
       agents: [makeAgent('test-agent', 'Test')],
       pollingInterval: 10,
-      createProvider: () => ({
+      defaultProvider: {
         generate: async (params: any) => {
           capturedTools = params.tools ?? []
           return { content: 'ok' }
         },
-      }),
+      },
     })
 
     kx.start()
@@ -341,9 +337,9 @@ describe('Keryx Integration', () => {
       agents: [makeAgent('test', 'Test')],
       daemons: [daemon2, daemon1], // deliberately out of order
       pollingInterval: 10,
-      createProvider: () => ({
+      defaultProvider: {
         generate: async () => ({ content: 'ok' }),
-      }),
+      },
     })
 
     kx.start()
@@ -384,12 +380,12 @@ describe('Keryx Integration', () => {
       agents: [makeAgent('test', 'Test')],
       daemons: [daemon],
       pollingInterval: 10,
-      createProvider: () => ({
+      defaultProvider: {
         generate: async (params: any) => {
           capturedTools = params.tools ?? []
           return { content: 'ok' }
         },
-      }),
+      },
     })
 
     kx.start()
@@ -418,12 +414,12 @@ describe('Keryx Integration', () => {
       agents: [makeAgent('test', 'Test')],
       daemons: [daemon],
       pollingInterval: 10,
-      createProvider: () => ({
+      defaultProvider: {
         generate: async (params: any) => {
           capturedSystemPrompt = params.messages.find((m: any) => m.role === 'system').content
           return { content: 'ok' }
         },
-      }),
+      },
     })
 
     kx.start()
@@ -440,9 +436,9 @@ describe('Keryx Integration', () => {
     const kx = createKeryx({
       agents: [makeAgent('test', 'Test')],
       pollingInterval: 100,
-      createProvider: () => ({
+      defaultProvider: {
         generate: async () => ({ content: 'ok' }),
-      }),
+      },
     })
 
     expect(kx.daemons.list()).toEqual([])
@@ -472,23 +468,21 @@ describe('Keryx Integration', () => {
         makeAgent('agent-b', 'Agent B'),
       ],
       pollingInterval: 10,
-      createProvider: () => {
-        return {
-          generate: async (params: any) => {
-            const systemMsg = params.messages.find((m: any) => m.role === 'system')
-            const userMsgs = params.messages.filter((m: any) => m.role === 'user')
-            const lastUserMsg = userMsgs[userMsgs.length - 1]?.content ?? ''
+      defaultProvider: {
+        generate: async (params: any) => {
+          const systemMsg = params.messages.find((m: any) => m.role === 'system')
+          const userMsgs = params.messages.filter((m: any) => m.role === 'user')
+          const lastUserMsg = userMsgs[userMsgs.length - 1]?.content ?? ''
 
-            // Agent B: always throws
-            if (systemMsg.content.includes('agent "agent-b"')) {
-              throw new Error('Agent B crashed')
-            }
+          // Agent B: always throws
+          if (systemMsg.content.includes('agent "agent-b"')) {
+            throw new Error('Agent B crashed')
+          }
 
-            // Agent A: track messages received
-            receivedByA.push(lastUserMsg)
-            return { content: 'A processed it.' }
-          },
-        }
+          // Agent A: track messages received
+          receivedByA.push(lastUserMsg)
+          return { content: 'A processed it.' }
+        },
       },
     })
 
@@ -514,7 +508,7 @@ describe('Keryx Integration', () => {
     const kx = createKeryx({
       agents: [makeAgent('serial', 'Serial Agent')],
       pollingInterval: 10,
-      createProvider: () => ({
+      defaultProvider: {
         generate: async () => {
           concurrentCount++
           maxConcurrent = Math.max(maxConcurrent, concurrentCount)
@@ -522,7 +516,7 @@ describe('Keryx Integration', () => {
           concurrentCount--
           return { content: 'done' }
         },
-      }),
+      },
     })
 
     kx.start()
@@ -559,9 +553,9 @@ describe('Keryx Integration', () => {
       agents: [makeAgent('test', 'Test')],
       daemons: [daemon],
       pollingInterval: 10,
-      createProvider: () => ({
+      defaultProvider: {
         generate: async () => ({ content: 'The response text', usage: { promptTokens: 100, completionTokens: 50, totalTokens: 150 } }),
-      }),
+      },
     })
 
     kx.start()
@@ -589,9 +583,9 @@ describe('Keryx Integration', () => {
       agents: [makeAgent('fail', 'Fail Agent')],
       daemons: [daemon],
       pollingInterval: 10,
-      createProvider: () => ({
+      defaultProvider: {
         generate: async () => { throw new Error('Boom!') },
-      }),
+      },
     })
 
     kx.start()
