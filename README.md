@@ -93,23 +93,23 @@ Agents have two communication primitives, injected automatically:
 
 | Tool | Pattern | Use |
 |---|---|---|
-| `send_message` | Fire-and-forget | Notifications, delegation without waiting |
-| `ask_agent` | Blocking RPC | Fan-out queries, request-reply between agents |
+| `message_send` | Fire-and-forget | Notifications, delegation without waiting |
+| `agent_ask` | Blocking RPC | Fan-out queries, request-reply between agents |
 
 ```typescript
 // Inside an agent's activation, via tool calls:
 
 // Fire-and-forget — send a task, don't wait
-send_message({ to: 'reporter', body: 'Compile the final report.' })
+message_send({ to: 'reporter', body: 'Compile the final report.' })
 
 // Blocking RPC — ask and wait for response (supports parallel tool calls)
-ask_agent({ to: 'news-agent', body: 'Get latest news for AAPL' })
-ask_agent({ to: 'market-data', body: 'Get 30-day price history for AAPL' })
+agent_ask({ to: 'news-agent', body: 'Get latest news for AAPL' })
+agent_ask({ to: 'market-data', body: 'Get 30-day price history for AAPL' })
 // Both resolve → agent gets both results in one step
 ```
 
 > [!WARNING]
-> **Deadlock risk**: If Agent A `ask_agent`s Agent B while Agent B `ask_agent`s Agent A, both will wait forever. Avoid circular request chains. Default timeout: 120 seconds.
+> **Deadlock risk**: If Agent A `agent_ask`s Agent B while Agent B `agent_ask`s Agent A, both will wait forever. Avoid circular request chains. Default timeout: 120 seconds.
 
 ## Daemons
 
@@ -169,6 +169,33 @@ No config key = no tools injected. This minimizes context window usage.
 | **loggerd** | Terminal logging for development observability | ✗ | ✗ |
 | **contextd** | Persist and restore Nous context between activations | ✗ | ✗ |
 | **crond** | Scheduled message delivery on intervals | ✗ | ✓ |
+| **keryxd** | Agent management — status, inbox reads, abort, flush | ✓ | ✗ |
+
+### keryxd — Agent Management
+
+The `keryxd` daemon gives agents visibility into the system. Useful for assistant agents that need to monitor background work.
+
+```typescript
+{
+  id: 'assistant',
+  config: {
+    'keryxd': {
+      read: ['*'],                    // can inspect any agent
+      write: ['analyst', 'news-*'],   // can flush/abort these agents
+    },
+  },
+}
+```
+
+Tools provisioned based on permissions:
+
+| Tool | Permission | Description |
+|---|---|---|
+| `agent_list` | always | List all agents with busy/idle status |
+| `agent_status` | `read` | Detailed status with active tool calls |
+| `inbox_read` | `read` | Peek at pending messages |
+| `inbox_flush` | `write` | Clear pending messages |
+| `agent_abort` | `write` | Force-abort running agent |
 
 ## Requirements
 

@@ -6,6 +6,7 @@
  */
 
 import { createContext, runAgent, AgentAbortError, type Tool, type AgentResult } from '@elfenlabs/nous'
+import type { RunStatus } from '@elfenlabs/nous'
 import type {
   AgentDefinition,
   Message,
@@ -28,7 +29,9 @@ export class ProcessManager {
   readonly replyChannels: ReplyChannelMap
 
   private activeLocks = new Map<string, Promise<void>>()
-  private abortControllers = new Map<string, AbortController>()
+  readonly abortControllers = new Map<string, AbortController>()
+  private agentStates = new Map<string, RunStatus>()
+  private activeMessages = new Map<string, Message>()
   private pollingTimer: ReturnType<typeof setInterval> | null = null
   private pollingInterval: number
   private createProvider: (config: ProviderConfig) => Provider
@@ -51,6 +54,23 @@ export class ProcessManager {
     this.replyChannels = opts.replyChannels
     this.pollingInterval = opts.pollingInterval
     this.createProvider = opts.createProvider
+  }
+
+  // ── Observability (for keryxd) ──────────────────────────────────────
+
+  /** Get cached run state for an agent (populated via onChange) */
+  getAgentState(agentId: string): RunStatus | undefined {
+    return this.agentStates.get(agentId)
+  }
+
+  /** Get the message currently being processed by an agent */
+  getActiveMessage(agentId: string): Message | undefined {
+    return this.activeMessages.get(agentId)
+  }
+
+  /** Check if an agent is currently processing a message */
+  isAgentBusy(agentId: string): boolean {
+    return this.activeLocks.has(agentId)
   }
 
   /** Start polling inboxes for pending messages */
@@ -222,13 +242,24 @@ export class ProcessManager {
     let steps = 0
 
     try {
-      const result: AgentResult = await runAgent({
+      // Store active message for observability
+      this.activeMessages.set(agentId, msg)
+
+      const run = runAgent({
         ctx,
         provider,
         instruction: fullInstruction,
         tools: allTools,
         signal: abortController.signal,
       })
+
+      // Subscribe to live state changes for keryxd
+      const unsub = run.onChange((status) => {
+        this.agentStates.set(agentId, status)
+      })
+
+      const result: AgentResult = await run
+      unsub()
 
       response = result.response
       steps = result.steps
@@ -262,8 +293,10 @@ export class ProcessManager {
         }
       }
     } finally {
-      // Cleanup abort controller
+      // Cleanup state tracking
       this.abortControllers.delete(agentId)
+      this.agentStates.delete(agentId)
+      this.activeMessages.delete(agentId)
 
       // Run onPostActivation hooks
       const postCtx: PostActivationContext = {

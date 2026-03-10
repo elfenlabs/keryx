@@ -18,7 +18,7 @@ export function createSendMessageTool(opts: {
   const { fromAgentId, inbox, replyChannels } = opts
 
   return createTool({
-    id: 'send_message',
+    id: 'message_send',
     description: 'Send a message to another agent or reply to the sender.',
     schema: {
       to: {

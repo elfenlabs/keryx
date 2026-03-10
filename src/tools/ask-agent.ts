@@ -21,11 +21,11 @@ export function createAskAgentTool(opts: {
   const { fromAgentId, inbox, registry, replyChannels } = opts
 
   return createTool({
-    id: 'ask_agent',
+    id: 'agent_ask',
     description:
       'Send a message to another agent and wait for their response. ' +
       'Use this when you need a result before continuing. ' +
-      'For fire-and-forget messaging, use send_message instead.',
+      'For fire-and-forget messaging, use message_send instead.',
     schema: {
       to: {
         type: 'string',

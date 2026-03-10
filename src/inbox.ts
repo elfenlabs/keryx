@@ -77,4 +77,20 @@ export class Inbox {
     }
     return result
   }
+
+  /** Peek at all pending messages for an agent (read-only copy) */
+  peekAll(agentId: string): Message[] {
+    const queue = this.queues.get(agentId)
+    if (!queue) return []
+    return [...queue]
+  }
+
+  /** Flush (clear) all pending messages for an agent. Returns count removed. */
+  flush(agentId: string): number {
+    const queue = this.queues.get(agentId)
+    if (!queue) return 0
+    const count = queue.length
+    queue.length = 0
+    return count
+  }
 }

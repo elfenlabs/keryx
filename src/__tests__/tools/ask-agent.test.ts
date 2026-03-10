@@ -1,5 +1,5 @@
 /**
- * ask_agent Tool — Tests
+ * agent_ask Tool — Tests
  *
  * Tests for the blocking agent-to-agent RPC tool.
  */
@@ -21,8 +21,8 @@ function wait(ms = 50): Promise<void> {
   return new Promise(r => setTimeout(r, ms))
 }
 
-describe('ask_agent tool', () => {
-  test('agent uses ask_agent to get a response from another agent', async () => {
+describe('agent_ask tool', () => {
+  test('agent uses agent_ask to get a response from another agent', async () => {
     let analystResult = ''
 
     const kx = createKeryx({
@@ -39,14 +39,14 @@ describe('ask_agent tool', () => {
             const userMsgs = params.messages.filter((m: any) => m.role === 'user')
             const lastUserMsg = userMsgs[userMsgs.length - 1]?.content ?? ''
 
-            // Analyst: use ask_agent to query researcher
+            // Analyst: use agent_ask to query researcher
             if (systemMsg.content.includes('agent "analyst"')) {
               callCount++
               if (callCount === 1) {
                 return {
                   toolCalls: [{
                     id: 'call-1',
-                    name: 'ask_agent',
+                    name: 'agent_ask',
                     arguments: { to: 'researcher', body: 'What is the market trend?' },
                   }],
                 }
@@ -59,12 +59,12 @@ describe('ask_agent tool', () => {
 
             // Researcher: reply via send_message to the replyTo channel
             if (systemMsg.content.includes('agent "researcher"')) {
-              const replyMatch = systemMsg.content.match(/send_message with to="(ext-[^"]+)"/)
+              const replyMatch = systemMsg.content.match(/message_send with to="(ext-[^"]+)"/)
               const replyTo = replyMatch?.[1] ?? 'unknown'
               return {
                 toolCalls: [{
                   id: 'call-r1',
-                  name: 'send_message',
+                  name: 'message_send',
                   arguments: { to: replyTo, body: 'Market is bullish on tech.' },
                 }],
               }
@@ -84,7 +84,7 @@ describe('ask_agent tool', () => {
     await kx.stop()
   })
 
-  test('ask_agent returns error for unknown agent', async () => {
+  test('agent_ask returns error for unknown agent', async () => {
     let toolResult = ''
 
     const kx = createKeryx({
@@ -99,7 +99,7 @@ describe('ask_agent tool', () => {
               return {
                 toolCalls: [{
                   id: 'call-1',
-                  name: 'ask_agent',
+                  name: 'agent_ask',
                   arguments: { to: 'nonexistent', body: 'Hello?' },
                 }],
               }
@@ -121,7 +121,7 @@ describe('ask_agent tool', () => {
     await kx.stop()
   })
 
-  test('ask_agent returns error when asking self', async () => {
+  test('agent_ask returns error when asking self', async () => {
     let toolResult = ''
 
     const kx = createKeryx({
@@ -136,7 +136,7 @@ describe('ask_agent tool', () => {
               return {
                 toolCalls: [{
                   id: 'call-1',
-                  name: 'ask_agent',
+                  name: 'agent_ask',
                   arguments: { to: 'narcissist', body: 'Talk to myself' },
                 }],
               }
@@ -157,7 +157,7 @@ describe('ask_agent tool', () => {
     await kx.stop()
   })
 
-  test('ask_agent times out against slow agent', async () => {
+  test('agent_ask times out against slow agent', async () => {
     let toolResult = ''
 
     const kx = createKeryx({
@@ -179,7 +179,7 @@ describe('ask_agent tool', () => {
                 return {
                   toolCalls: [{
                     id: 'call-1',
-                    name: 'ask_agent',
+                    name: 'agent_ask',
                     arguments: { to: 'slow', body: 'Quick!', timeout: 100 },
                   }],
                 }
@@ -209,7 +209,7 @@ describe('ask_agent tool', () => {
     await kx.stop()
   })
 
-  test('ask_agent tool appears in agent tool set', async () => {
+  test('agent_ask tool appears in agent tool set', async () => {
     let capturedTools: any[] = []
 
     const kx = createKeryx({
@@ -227,7 +227,7 @@ describe('ask_agent tool', () => {
     await kx.send({ to: 'test', body: 'hello' })
     await wait(200)
 
-    const askTool = capturedTools.find((t: any) => t.name === 'ask_agent')
+    const askTool = capturedTools.find((t: any) => t.name === 'agent_ask')
     expect(askTool).toBeDefined()
     expect(askTool.description).toContain('wait for their response')
 

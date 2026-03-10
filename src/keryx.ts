@@ -153,6 +153,62 @@ export function createKeryx(config: KeryxConfig): KeryxInstance {
         return daemonManager.list()
       },
     },
+
+    /** Agent observability and management */
+    agents: {
+      list() {
+        return registry.list().map(({ id, name }) => {
+          const busy = pm.isAgentBusy(id)
+          const result: import('./types.js').AgentStatus = { id, name, status: busy ? 'busy' : 'idle' }
+          if (busy) {
+            const msg = pm.getActiveMessage(id)
+            if (msg) {
+              result.currentMessage = { from: msg.from, body: msg.body, claimedAt: msg.claimedAt ?? msg.createdAt }
+            }
+            const state = pm.getAgentState(id)
+            if (state) {
+              result.step = state.step
+              result.activeToolCalls = state.activeToolCalls
+            }
+          }
+          return result
+        })
+      },
+
+      getStatus(id: string) {
+        const agentDef = registry.get(id)
+        if (!agentDef) return undefined
+        const busy = pm.isAgentBusy(id)
+        const result: import('./types.js').AgentStatus = { id, name: agentDef.name, status: busy ? 'busy' : 'idle' }
+        if (busy) {
+          const msg = pm.getActiveMessage(id)
+          if (msg) {
+            result.currentMessage = { from: msg.from, body: msg.body, claimedAt: msg.claimedAt ?? msg.createdAt }
+          }
+          const state = pm.getAgentState(id)
+          if (state) {
+            result.step = state.step
+            result.activeToolCalls = state.activeToolCalls
+          }
+        }
+        return result
+      },
+
+      getInbox(id: string) {
+        return inbox.peekAll(id)
+      },
+
+      flushInbox(id: string) {
+        return inbox.flush(id)
+      },
+
+      abort(id: string) {
+        const controller = pm.abortControllers.get(id)
+        if (!controller) return false
+        controller.abort()
+        return true
+      },
+    },
   }
 
   return instance

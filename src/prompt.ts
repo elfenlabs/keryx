@@ -19,7 +19,7 @@ export function buildPromptAddendum(opts: {
   const lines: string[] = []
 
   // Identity
-  lines.push(`You are agent "${agentId}" (${agentName}). You communicate with other agents using the send_message (fire-and-forget) and ask_agent (blocking request-reply) tools.`)
+  lines.push(`You are agent "${agentId}" (${agentName}). You communicate with other agents using the message_send (fire-and-forget) and agent_ask (blocking request-reply) tools.`)
   lines.push('')
 
   // Registry
@@ -47,7 +47,7 @@ export function buildPromptAddendum(opts: {
 
   // Reply instructions
   if (message.replyTo) {
-    lines.push(`To reply to the original requester, use send_message with to="${message.replyTo}".`)
+    lines.push(`To reply to the original requester, use message_send with to="${message.replyTo}".`)
     lines.push('')
   }
 

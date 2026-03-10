@@ -4,7 +4,7 @@
  * All shared type definitions for the orchestrator.
  */
 
-import type { Tool, Context, SerializedContext, Provider } from '@elfenlabs/nous'
+import type { Tool, Context, SerializedContext, Provider, ActiveToolCall } from '@elfenlabs/nous'
 
 // ── Messages ────────────────────────────────────────────────────────────────
 
@@ -136,4 +136,26 @@ export type KeryxInstance = {
     deregister: (id: string) => void
     list: () => { id: string; order: number }[]
   }
+  /** Agent observability and management (used by keryxd) */
+  agents: {
+    list: () => AgentStatus[]
+    getStatus: (id: string) => AgentStatus | undefined
+    getInbox: (id: string) => Message[]
+    flushInbox: (id: string) => number
+    abort: (id: string) => boolean
+  }
+}
+
+/** Agent status snapshot */
+export type AgentStatus = {
+  id: string
+  name: string
+  status: 'busy' | 'idle'
+  currentMessage?: {
+    from: string | null
+    body: string
+    claimedAt: Date
+  }
+  step?: number
+  activeToolCalls?: ActiveToolCall[]
 }
