@@ -354,7 +354,7 @@ export function artifactd(opts?: ArtifactdOptions): DaemonDefinition {
       storage.init()
     },
 
-    onPreActivation: (ctx) => {
+    onBeforeActivation: (ctx) => {
       const agentId = ctx.agentId
 
       ctx.addTools([

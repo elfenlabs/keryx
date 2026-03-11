@@ -4,7 +4,7 @@
 
 ## Overview
 
-`secretd` is a Keryx daemon that provides secure access to secrets (API keys, tokens, credentials) without exposing their values to agents. Agents see symbolic handles like `${SECRET:OPENAI_API_KEY}` and use them in tool arguments. `secretd` substitutes the real values at the `onPreToolCall` middleware layer, scoped to allowed tools.
+`secretd` is a Keryx daemon that provides secure access to secrets (API keys, tokens, credentials) without exposing their values to agents. Agents see symbolic handles like `${SECRET:OPENAI_API_KEY}` and use them in tool arguments. `secretd` substitutes the real values at the `onBeforeToolCall` middleware layer, scoped to allowed tools.
 
 ### Why
 
@@ -105,7 +105,7 @@ The agent uses these handles in tool arguments:
 }
 ```
 
-`secretd` intercepts at `onPreToolCall`, verifies the ACL and tool allowlist, and substitutes `${SECRET:OPENAI_API_KEY}` → `sk-abc123...` before the tool executes.
+`secretd` intercepts at `onBeforeToolCall`, verifies the ACL and tool allowlist, and substitutes `${SECRET:OPENAI_API_KEY}` → `sk-abc123...` before the tool executes.
 
 ### Error Handling
 
@@ -191,8 +191,8 @@ class VaultSecretStorage implements SecretStorage {
 | Hook | Order | Behavior |
 |------|-------|----------|
 | `onStart` | 3 | Load/decrypt storage. Validate all configured secrets exist. |
-| `onPreActivation` | 3 | Inject prompt segment listing granted `${SECRET:*}` handles |
-| `onPreToolCall` | 3 | Deep-substitute `${SECRET:ID}` in args if tool is allowed |
+| `onBeforeActivation` | 3 | Inject prompt segment listing granted `${SECRET:*}` handles |
+| `onBeforeToolCall` | 3 | Deep-substitute `${SECRET:ID}` in args if tool is allowed |
 | `onStop` | 3 | Clear secrets from memory |
 
 ### Substitution Engine
@@ -244,7 +244,7 @@ An analyst agent with access to the OpenAI API:
      body: "{...}"
    })
 
-── secretd middleware (onPreToolCall) ──────────────────────────────────
+── secretd middleware (onBeforeToolCall) ──────────────────────────────────
 
 5. Checks: analyst has grant ✓, http_request is allowed ✓
 6. Substitutes: "Bearer ${SECRET:OPENAI_API_KEY}" → "Bearer sk-abc123..."

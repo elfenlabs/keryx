@@ -11,7 +11,7 @@ import type {
   AgentDefinition,
   Message,
   ActivationContext,
-  PostActivationContext,
+  AfterActivationContext,
 } from './types.js'
 import type { Provider } from '@elfenlabs/nous'
 import { Inbox } from './inbox.js'
@@ -180,8 +180,8 @@ export class ProcessManager {
       },
     }
 
-    // Run onPreActivation hooks (daemons inject tools + prompt segments, restore context)
-    await this.daemons.runOnPreActivation(activationCtx)
+    // Run onBeforeActivation hooks (daemons inject tools + prompt segments, restore context)
+    await this.daemons.runOnBeforeActivation(activationCtx)
 
     // Create the send_message and ask_agent tools for this activation
     const sendMessageTool = createSendMessageTool({
@@ -267,10 +267,10 @@ export class ProcessManager {
           })
         },
         onBeforeToolCall: async (tool, args) => {
-          await this.daemons.runOnPreToolCall({ agentId, toolId: tool.id, args })
+          await this.daemons.runOnBeforeToolCall({ agentId, toolId: tool.id, args })
         },
         onAfterToolCall: async (tool, args, result) => {
-          await this.daemons.runOnPostToolCall({ agentId, toolId: tool.id, args, result })
+          await this.daemons.runOnAfterToolCall({ agentId, toolId: tool.id, args, result })
         },
       })
 
@@ -319,8 +319,8 @@ export class ProcessManager {
       this.agentStates.delete(agentId)
       this.activeMessages.delete(agentId)
 
-      // Run onPostActivation hooks
-      const postCtx: PostActivationContext = {
+      // Run onAfterActivation hooks
+      const postCtx: AfterActivationContext = {
         agentId,
         agentConfig: agentDef.config ?? {},
         message: msg,
@@ -329,7 +329,7 @@ export class ProcessManager {
         error,
         steps,
       }
-      await this.daemons.runOnPostActivation(postCtx)
+      await this.daemons.runOnAfterActivation(postCtx)
     }
   }
 }

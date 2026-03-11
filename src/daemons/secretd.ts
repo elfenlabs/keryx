@@ -6,7 +6,7 @@
  *
  * Secrets are never exposed to the agent — only symbolic handles
  * are shown. Substitution happens at the middleware layer during
- * onPreToolCall, scoped to allowed tools per secret.
+ * onBeforeToolCall, scoped to allowed tools per secret.
  */
 
 import * as crypto from 'node:crypto'
@@ -246,7 +246,7 @@ export function secretd(opts: SecretdOptions): DaemonDefinition {
       }
     },
 
-    onPreActivation: (ctx) => {
+    onBeforeActivation: (ctx) => {
       const granted = getGrantedSecrets(ctx.agentId)
       if (granted.length === 0) return
 
@@ -256,7 +256,7 @@ export function secretd(opts: SecretdOptions): DaemonDefinition {
       )
     },
 
-    onPreToolCall: (ctx) => {
+    onBeforeToolCall: (ctx) => {
       const agentId = ctx.agentId
       const toolId = ctx.toolId
 

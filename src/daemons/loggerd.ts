@@ -45,7 +45,7 @@ export function loggerd(opts?: LoggerdOptions): DaemonDefinition {
       log(`[${ctx.message.to}] ← "${body}" (from: ${from})${force}`)
     },
 
-    onPostActivation: (ctx) => {
+    onAfterActivation: (ctx) => {
       if (ctx.error) {
         log(`[${ctx.agentId}] ✗ ERROR: ${ctx.error.message}`)
       } else {

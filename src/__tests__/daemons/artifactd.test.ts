@@ -169,7 +169,7 @@ describe('FilesystemArtifactStorage', () => {
 // ── Tool Tests (via daemon) ─────────────────────────────────────────────────
 
 describe('artifactd tools', () => {
-  /** Extract tools from the daemon by simulating onPreActivation */
+  /** Extract tools from the daemon by simulating onBeforeActivation */
   function getTools(agentId: string, root: string) {
     const daemon = artifactd({ root })
     const tools: any[] = []
@@ -179,9 +179,9 @@ describe('artifactd tools', () => {
       daemon.onStart({} as any)
     }
 
-    // Simulate onPreActivation to collect tools
-    if (daemon.onPreActivation) {
-      daemon.onPreActivation({
+    // Simulate onBeforeActivation to collect tools
+    if (daemon.onBeforeActivation) {
+      daemon.onBeforeActivation({
         agentId,
         agentConfig: {},
         message: {} as any,

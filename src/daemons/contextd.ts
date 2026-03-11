@@ -57,7 +57,7 @@ export function contextd(opts?: ContextdOptions): DaemonDefinition {
     id: 'context',
     order: 5, // Before most daemons, after loggerd
 
-    onPreActivation: (ctx) => {
+    onBeforeActivation: (ctx) => {
       const config = ctx.agentConfig['context'] as { persist?: boolean } | undefined
       if (!config?.persist) return
 
@@ -70,7 +70,7 @@ export function contextd(opts?: ContextdOptions): DaemonDefinition {
       }
     },
 
-    onPostActivation: (ctx) => {
+    onAfterActivation: (ctx) => {
       const config = ctx.agentConfig['context'] as { persist?: boolean } | undefined
       if (!config?.persist) return
 

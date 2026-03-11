@@ -71,7 +71,7 @@ export function keryxd(): DaemonDefinition {
       kxRef = null
     },
 
-    onPreActivation: (ctx) => {
+    onBeforeActivation: (ctx) => {
       const config = ctx.agentConfig['keryxd'] as KeryxdConfig | undefined
       if (!config || !kxRef) return
 

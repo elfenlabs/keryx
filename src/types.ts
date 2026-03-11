@@ -47,7 +47,7 @@ export type MessageContext = {
   message: Message
 }
 
-/** Context passed to onPreActivation hooks */
+/** Context passed to onBeforeActivation hooks */
 export type ActivationContext = {
   agentId: string
   agentConfig: Record<string, Record<string, unknown>>
@@ -57,23 +57,23 @@ export type ActivationContext = {
   addPromptSegment: (segment: string) => void
 }
 
-/** Context passed to onPreToolCall hooks (broadcast, args are mutable) */
-export type PreToolCallContext = {
+/** Context passed to onBeforeToolCall hooks (broadcast, args are mutable) */
+export type BeforeToolCallContext = {
   agentId: string
   toolId: string
   args: Record<string, unknown>
 }
 
-/** Context passed to onPostToolCall hooks (broadcast, read-only) */
-export type PostToolCallContext = {
+/** Context passed to onAfterToolCall hooks (broadcast, read-only) */
+export type AfterToolCallContext = {
   agentId: string
   toolId: string
   args: Record<string, unknown>
   result: unknown
 }
 
-/** Context passed to onPostActivation hooks */
-export type PostActivationContext = {
+/** Context passed to onAfterActivation hooks */
+export type AfterActivationContext = {
   agentId: string
   agentConfig: Record<string, Record<string, unknown>>
   message: Message
@@ -103,10 +103,10 @@ export type DaemonDefinition = {
   onStart?: (kx: KeryxInstance) => void | Promise<void>
   onStop?: () => void | Promise<void>
   onMessageReceived?: (ctx: MessageContext) => void | Promise<void>
-  onPreActivation?: (ctx: ActivationContext) => void | Promise<void>
-  onPreToolCall?: (ctx: PreToolCallContext) => void | Promise<void>
-  onPostToolCall?: (ctx: PostToolCallContext) => void | Promise<void>
-  onPostActivation?: (ctx: PostActivationContext) => void | Promise<void>
+  onBeforeActivation?: (ctx: ActivationContext) => void | Promise<void>
+  onBeforeToolCall?: (ctx: BeforeToolCallContext) => void | Promise<void>
+  onAfterToolCall?: (ctx: AfterToolCallContext) => void | Promise<void>
+  onAfterActivation?: (ctx: AfterActivationContext) => void | Promise<void>
   /** Synchronous streaming hook — must not block token flow */
   onAgentStream?: (ctx: AgentStreamContext) => void
 }

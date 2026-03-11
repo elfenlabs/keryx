@@ -321,16 +321,16 @@ describe('Keryx Integration', () => {
       id: 'first',
       order: 1,
       onMessageReceived: () => { hookLog.push('first:onMessageReceived') },
-      onPreActivation: () => { hookLog.push('first:onPreActivation') },
-      onPostActivation: () => { hookLog.push('first:onPostActivation') },
+      onBeforeActivation: () => { hookLog.push('first:onBeforeActivation') },
+      onAfterActivation: () => { hookLog.push('first:onAfterActivation') },
     }
 
     const daemon2: DaemonDefinition = {
       id: 'second',
       order: 2,
       onMessageReceived: () => { hookLog.push('second:onMessageReceived') },
-      onPreActivation: () => { hookLog.push('second:onPreActivation') },
-      onPostActivation: () => { hookLog.push('second:onPostActivation') },
+      onBeforeActivation: () => { hookLog.push('second:onBeforeActivation') },
+      onAfterActivation: () => { hookLog.push('second:onAfterActivation') },
     }
 
     const kx = createKeryx({
@@ -350,22 +350,22 @@ describe('Keryx Integration', () => {
     expect(hookLog).toEqual([
       'first:onMessageReceived',
       'second:onMessageReceived',
-      'first:onPreActivation',
-      'second:onPreActivation',
-      'first:onPostActivation',
-      'second:onPostActivation',
+      'first:onBeforeActivation',
+      'second:onBeforeActivation',
+      'first:onAfterActivation',
+      'second:onAfterActivation',
     ])
 
     await kx.stop()
   })
 
-  test('daemon can inject tools via onPreActivation', async () => {
+  test('daemon can inject tools via onBeforeActivation', async () => {
     let capturedTools: any[] = []
 
     const daemon: DaemonDefinition = {
       id: 'tool-injector',
       order: 10,
-      onPreActivation: (ctx) => {
+      onBeforeActivation: (ctx) => {
         ctx.addTools([
           createTool({
             id: 'custom_tool',
@@ -405,7 +405,7 @@ describe('Keryx Integration', () => {
     const daemon: DaemonDefinition = {
       id: 'prompt-injector',
       order: 10,
-      onPreActivation: (ctx) => {
+      onBeforeActivation: (ctx) => {
         ctx.addPromptSegment('You have access to the Thesauros knowledge graph.')
       },
     }
@@ -536,14 +536,14 @@ describe('Keryx Integration', () => {
 
   // ─── PostActivation Context ───────────────────────────────────────────
 
-  test('onPostActivation receives response and steps', async () => {
+  test('onAfterActivation receives response and steps', async () => {
     let capturedResponse = ''
     let capturedSteps = 0
 
     const daemon: DaemonDefinition = {
       id: 'spy',
       order: 0,
-      onPostActivation: (ctx) => {
+      onAfterActivation: (ctx) => {
         capturedResponse = ctx.response ?? ''
         capturedSteps = ctx.steps
       },
@@ -568,13 +568,13 @@ describe('Keryx Integration', () => {
     await kx.stop()
   })
 
-  test('onPostActivation receives error on failure', async () => {
+  test('onAfterActivation receives error on failure', async () => {
     let capturedError: Error | null = null
 
     const daemon: DaemonDefinition = {
       id: 'spy',
       order: 0,
-      onPostActivation: (ctx) => {
+      onAfterActivation: (ctx) => {
         capturedError = ctx.error
       },
     }

@@ -9,9 +9,9 @@ import type {
   DaemonDefinition,
   MessageContext,
   ActivationContext,
-  PreToolCallContext,
-  PostToolCallContext,
-  PostActivationContext,
+  BeforeToolCallContext,
+  AfterToolCallContext,
+  AfterActivationContext,
   AgentStreamContext,
 } from './types.js'
 
@@ -58,38 +58,38 @@ export class DaemonManager {
     }
   }
 
-  /** Run onPreActivation on all daemons in order */
-  async runOnPreActivation(ctx: ActivationContext): Promise<void> {
+  /** Run onBeforeActivation on all daemons in order */
+  async runOnBeforeActivation(ctx: ActivationContext): Promise<void> {
     for (const daemon of this.daemons) {
-      if (daemon.onPreActivation) {
-        await daemon.onPreActivation(ctx)
+      if (daemon.onBeforeActivation) {
+        await daemon.onBeforeActivation(ctx)
       }
     }
   }
 
-  /** Run onPreToolCall on all daemons in order (broadcast — args are mutable) */
-  async runOnPreToolCall(ctx: PreToolCallContext): Promise<void> {
+  /** Run onBeforeToolCall on all daemons in order (broadcast — args are mutable) */
+  async runOnBeforeToolCall(ctx: BeforeToolCallContext): Promise<void> {
     for (const daemon of this.daemons) {
-      if (daemon.onPreToolCall) {
-        await daemon.onPreToolCall(ctx)
+      if (daemon.onBeforeToolCall) {
+        await daemon.onBeforeToolCall(ctx)
       }
     }
   }
 
-  /** Run onPostToolCall on all daemons in order (broadcast — read-only) */
-  async runOnPostToolCall(ctx: PostToolCallContext): Promise<void> {
+  /** Run onAfterToolCall on all daemons in order (broadcast — read-only) */
+  async runOnAfterToolCall(ctx: AfterToolCallContext): Promise<void> {
     for (const daemon of this.daemons) {
-      if (daemon.onPostToolCall) {
-        await daemon.onPostToolCall(ctx)
+      if (daemon.onAfterToolCall) {
+        await daemon.onAfterToolCall(ctx)
       }
     }
   }
 
-  /** Run onPostActivation on all daemons in order */
-  async runOnPostActivation(ctx: PostActivationContext): Promise<void> {
+  /** Run onAfterActivation on all daemons in order */
+  async runOnAfterActivation(ctx: AfterActivationContext): Promise<void> {
     for (const daemon of this.daemons) {
-      if (daemon.onPostActivation) {
-        await daemon.onPostActivation(ctx)
+      if (daemon.onAfterActivation) {
+        await daemon.onAfterActivation(ctx)
       }
     }
   }
