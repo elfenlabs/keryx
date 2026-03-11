@@ -112,12 +112,12 @@ const myDaemon: DaemonDefinition = {
   onStop: () => { /* cleanup */ },
 
   // Per-activation hooks
-  onPreActivation: (ctx) => {
+  onBeforeActivation: (ctx) => {
     ctx.addTools([queryTool])
     ctx.addPromptSegment('You have access to the knowledge graph.')
   },
   onToolCall: (ctx) => myService.execute(ctx.toolId, ctx.args),
-  onPostActivation: (ctx) => { /* cleanup, metrics */ },
+  onAfterActivation: (ctx) => { /* cleanup, metrics */ },
 }
 ```
 
@@ -128,9 +128,11 @@ const myDaemon: DaemonDefinition = {
 | `onStart(kx)` | `kx.start()` is called | Start background processes |
 | `onStop()` | `kx.stop()` is called | Cleanup background processes |
 | `onMessageReceived` | Message enters inbox | Logging, filtering |
-| `onPreActivation` | Before Nous starts | Tool provisioning, prompt injection |
-| `onToolCall` | Agent calls a daemon tool | Execute tool logic |
-| `onPostActivation` | After activation ends | Cleanup, metrics |
+| `onBeforeActivation` | Before Nous starts | Tool provisioning, prompt injection |
+| `onBeforeToolCall` | Before a tool executes | Argument mutation, secret injection |
+| `onAfterToolCall` | After a tool completes | Logging, metrics |
+| `onAfterActivation` | After activation ends | Context persistence, cleanup |
+| `onAgentStream` | During agent streaming | Real-time output/thinking/tool call observation |
 
 ### Scoped Configuration
 
@@ -151,12 +153,15 @@ No config key = no tools injected. This minimizes context window usage.
 
 ### Built-in Daemons
 
-| Daemon | Purpose | Provides Tools | Pushes Messages |
-|---|---|---|---|
-| **loggerd** | Terminal logging for development observability | ✗ | ✗ |
-| **contextd** | Persist and restore Nous context between activations | ✗ | ✗ |
-| **crond** | Scheduled message delivery on intervals | ✗ | ✓ |
-| **keryxd** | Agent management — status, inbox reads, abort, flush | ✓ | ✗ |
+| Daemon | Purpose | Provides Tools | Pushes Messages | Docs |
+|---|---|---|---|---|
+| **loggerd** | Terminal logging for development observability | ✗ | ✗ | — |
+| **contextd** | Persist and restore Nous context between activations | ✗ | ✗ | — |
+| **crond** | Scheduled message delivery on intervals | ✗ | ✓ | — |
+| **keryxd** | Agent management — status, inbox reads, abort, flush | ✓ | ✗ | — |
+| **artifactd** | Shared artifact storage with ownership and read/write tools | ✓ | ✗ | [docs](docs/daemons/artifactd/README.md) |
+| **secretd** | Secure secret injection via symbolic handles | ✗ | ✗ | [docs](docs/daemons/secretd/README.md) |
+| **streamd** | Real-time streaming event bus for agent output | ✗ | ✗ | [docs](docs/daemons/streamd/README.md) |
 
 ### keryxd — Agent Management
 
