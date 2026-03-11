@@ -83,6 +83,15 @@ export type PostActivationContext = {
   steps: number
 }
 
+/** Context passed to onAgentStream hooks */
+export type AgentStreamContext = {
+  agentId: string
+  type: 'thinking' | 'output'
+  phase: 'start' | 'chunk' | 'end'
+  /** Present only when phase === 'chunk' */
+  chunk?: string
+}
+
 /** A daemon (middleware service) registered with Keryx */
 export type DaemonDefinition = {
   id: string
@@ -94,6 +103,8 @@ export type DaemonDefinition = {
   onPreToolCall?: (ctx: PreToolCallContext) => void | Promise<void>
   onPostToolCall?: (ctx: PostToolCallContext) => void | Promise<void>
   onPostActivation?: (ctx: PostActivationContext) => void | Promise<void>
+  /** Synchronous streaming hook — must not block token flow */
+  onAgentStream?: (ctx: AgentStreamContext) => void
 }
 
 // ── Keryx Configuration ─────────────────────────────────────────────────────

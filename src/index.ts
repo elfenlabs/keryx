@@ -16,6 +16,7 @@ export { crond } from './daemons/crond.js'
 export { keryxd } from './daemons/keryxd.js'
 export { artifactd } from './daemons/artifactd.js'
 export { secretd } from './daemons/secretd.js'
+export { streamd } from './daemons/streamd.js'
 
 // Types
 export type {
@@ -27,6 +28,7 @@ export type {
   PreToolCallContext,
   PostToolCallContext,
   PostActivationContext,
+  AgentStreamContext,
   KeryxConfig,
   KeryxInstance,
   SendOptions,
@@ -40,3 +42,4 @@ export type { CronJob, CrondOptions } from './daemons/crond.js'
 export type { KeryxdConfig } from './daemons/keryxd.js'
 export type { ArtifactdOptions, ArtifactStorage, ArtifactMeta, ArtifactInfo } from './daemons/artifactd.js'
 export type { SecretdOptions, SecretConfig, SecretStorage } from './daemons/secretd.js'
+export type { StreamEvent, StreamSubscriber, StreamdHandle } from './daemons/streamd.js'

@@ -12,6 +12,7 @@ import type {
   PreToolCallContext,
   PostToolCallContext,
   PostActivationContext,
+  AgentStreamContext,
 } from './types.js'
 
 export class DaemonManager {
@@ -92,5 +93,15 @@ export class DaemonManager {
       }
     }
   }
+
+  /** Run onAgentStream on all daemons synchronously (fire-and-forget, never blocks token flow) */
+  runOnAgentStream(ctx: AgentStreamContext): void {
+    for (const daemon of this.daemons) {
+      if (daemon.onAgentStream) {
+        daemon.onAgentStream(ctx)
+      }
+    }
+  }
 }
+
 

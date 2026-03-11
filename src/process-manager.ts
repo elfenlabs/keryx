@@ -236,6 +236,24 @@ export class ProcessManager {
         instruction: fullInstruction,
         tools: allTools,
         signal: abortController.signal,
+        onThinkingStart: () => {
+          this.daemons.runOnAgentStream({ agentId, type: 'thinking', phase: 'start' })
+        },
+        onThinking: (chunk) => {
+          this.daemons.runOnAgentStream({ agentId, type: 'thinking', phase: 'chunk', chunk })
+        },
+        onThinkingEnd: () => {
+          this.daemons.runOnAgentStream({ agentId, type: 'thinking', phase: 'end' })
+        },
+        onOutputStart: () => {
+          this.daemons.runOnAgentStream({ agentId, type: 'output', phase: 'start' })
+        },
+        onOutput: (chunk) => {
+          this.daemons.runOnAgentStream({ agentId, type: 'output', phase: 'chunk', chunk })
+        },
+        onOutputEnd: () => {
+          this.daemons.runOnAgentStream({ agentId, type: 'output', phase: 'end' })
+        },
         onBeforeToolCall: async (tool, args) => {
           await this.daemons.runOnPreToolCall({ agentId, toolId: tool.id, args })
         },
