@@ -102,4 +102,95 @@ describe('loggerd', () => {
 
     await kx.stop()
   })
+
+  // ── Verbose mode tests ──────────────────────────────────────────────
+
+  test('verbose: logs tool calls and results', async () => {
+    const logs: string[] = []
+    let callCount = 0
+
+    const kx = createKeryx({
+      agents: [{
+        ...makeAgent('worker', 'Worker'),
+        tools: [{
+          id: 'greet',
+          description: 'Says hello',
+          schema: { name: { type: 'string' as const, description: 'Name' } },
+          execute: async (args: { name: string }) => `Hello, ${args.name}!`,
+        }],
+      }],
+      daemons: [loggerd({ verbose: true, log: (...args: unknown[]) => logs.push(args.join(' ')) })],
+      pollingInterval: 10,
+      defaultProvider: {
+        generate: async () => {
+          callCount++
+          if (callCount === 1) {
+            return {
+              toolCalls: [{ id: 'tc1', name: 'greet', arguments: { name: 'World' } }],
+            }
+          }
+          return { content: 'Done greeting.' }
+        },
+      },
+    })
+
+    kx.start()
+    await kx.send({ to: 'worker', body: 'Say hi' })
+    await wait(500)
+
+    const toolCallLog = logs.find(l => l.includes('tool_call:'))
+    expect(toolCallLog).toBeDefined()
+    expect(toolCallLog).toContain('greet')
+
+    const toolResultLog = logs.find(l => l.includes('tool_result:'))
+    expect(toolResultLog).toBeDefined()
+    expect(toolResultLog).toContain('Hello, World!')
+
+    await kx.stop()
+  })
+
+  test('verbose: output contains ANSI color codes', async () => {
+    const logs: string[] = []
+
+    const kx = createKeryx({
+      agents: [makeAgent('colortest', 'Color Agent')],
+      daemons: [loggerd({ verbose: true, log: (...args: unknown[]) => logs.push(args.join(' ')) })],
+      pollingInterval: 10,
+      defaultProvider: {
+        generate: async () => ({ content: 'Colored response' }),
+      },
+    })
+
+    kx.start()
+    await kx.send({ to: 'colortest', body: 'Test colors' })
+    await wait(200)
+
+    // Verbose logs should contain ANSI escape codes
+    const hasAnsi = logs.some(l => l.includes('\x1b['))
+    expect(hasAnsi).toBe(true)
+
+    await kx.stop()
+  })
+
+  test('verbose: non-verbose mode produces no ANSI codes', async () => {
+    const logs: string[] = []
+
+    const kx = createKeryx({
+      agents: [makeAgent('plain', 'Plain Agent')],
+      daemons: [loggerd({ log: (...args: unknown[]) => logs.push(args.join(' ')) })],
+      pollingInterval: 10,
+      defaultProvider: {
+        generate: async () => ({ content: 'Plain response' }),
+      },
+    })
+
+    kx.start()
+    await kx.send({ to: 'plain', body: 'No colors' })
+    await wait(200)
+
+    const hasAnsi = logs.some(l => l.includes('\x1b['))
+    expect(hasAnsi).toBe(false)
+
+    await kx.stop()
+  })
 })

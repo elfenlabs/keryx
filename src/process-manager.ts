@@ -87,7 +87,11 @@ export class ProcessManager {
       clearInterval(this.pollingTimer)
       this.pollingTimer = null
     }
-    // Wait for all active agent processing to finish
+    // Abort all running agents so their LLM calls terminate
+    for (const controller of this.abortControllers.values()) {
+      controller.abort()
+    }
+    // Wait for all active agent processing to finish (should resolve quickly after abort)
     const activeLocks = [...this.activeLocks.values()]
     if (activeLocks.length > 0) {
       await Promise.all(activeLocks)
