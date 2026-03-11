@@ -12,12 +12,13 @@ import type {
   Message,
   ActivationContext,
   AfterActivationContext,
+  ReplyChannelMap,
 } from './types.js'
 import type { Provider } from '@elfenlabs/nous'
 import { Inbox } from './inbox.js'
 import { Registry } from './registry.js'
 import { DaemonManager } from './daemon.js'
-import { createSendMessageTool, type ReplyChannelMap } from './tools/send-message.js'
+import { createSendMessageTool } from './tools/send-message.js'
 import { createAskAgentTool } from './tools/ask-agent.js'
 import { buildPromptAddendum } from './prompt.js'
 
@@ -191,7 +192,6 @@ export class ProcessManager {
     const sendMessageTool = createSendMessageTool({
       fromAgentId: agentId,
       inbox: this.inbox,
-      replyChannels: this.replyChannels,
     })
 
     const askAgentTool = createAskAgentTool({
@@ -334,6 +334,14 @@ export class ProcessManager {
         steps,
       }
       await this.daemons.runOnAfterActivation(postCtx)
+
+      // Resolve reply channel with agent's final output (used by kx.request and agent_ask)
+      if (msg.replyTo?.startsWith('ext-')) {
+        const resolver = this.replyChannels.get(msg.replyTo)
+        if (resolver) {
+          resolver(response ?? '')
+        }
+      }
     }
   }
 }

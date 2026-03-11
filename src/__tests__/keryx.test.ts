@@ -129,33 +129,13 @@ describe('Keryx Integration', () => {
 
   // ─── Request-Reply ────────────────────────────────────────────────────
 
-  test('request() returns agent response via ephemeral channel', async () => {
-    // The agent needs to call message_send with the replyTo channel
-    providerBehaviors = new Map()
-    let replyCallCount = 0
-
+  test('request() returns agent response via final output', async () => {
     const kx = createKeryx({
       agents: [makeAgent('responder', 'Responder')],
       pollingInterval: 10,
       defaultProvider: {
-        generate: async (params: any) => {
-          replyCallCount++
-          // First call: make a tool call to reply via message_send
-          if (replyCallCount === 1) {
-            // Extract the replyTo from the system prompt
-            const systemMsg = params.messages.find((m: any) => m.role === 'system')
-            const replyMatch = systemMsg.content.match(/message_send with to="(ext-[^"]+)"/)
-            const replyTo = replyMatch?.[1] ?? 'unknown'
-            return {
-              toolCalls: [{
-                id: 'call-1',
-                name: 'message_send',
-                arguments: { to: replyTo, body: 'The answer is 42' },
-              }],
-            }
-          }
-          // Second call (after tool result): final response
-          return { content: 'Done.' }
+        generate: async () => {
+          return { content: 'The answer is 42' }
         },
       },
     })

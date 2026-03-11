@@ -11,12 +11,12 @@ import type {
   SendOptions,
   RequestOptions,
   DaemonDefinition,
+  ReplyChannelMap,
 } from './types.js'
 import { Inbox } from './inbox.js'
 import { Registry } from './registry.js'
 import { DaemonManager } from './daemon.js'
 import { ProcessManager } from './process-manager.js'
-import type { ReplyChannelMap } from './tools/send-message.js'
 
 /**
  * Create a Keryx orchestrator instance.

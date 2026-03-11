@@ -8,7 +8,7 @@
 import { createTool } from '@elfenlabs/nous'
 import type { Inbox } from '../inbox.js'
 import type { Registry } from '../registry.js'
-import type { ReplyChannelMap } from './send-message.js'
+import type { ReplyChannelMap } from '../types.js'
 
 const DEFAULT_TIMEOUT_MS = 120_000 // 2 minutes
 

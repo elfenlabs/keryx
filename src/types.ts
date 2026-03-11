@@ -6,6 +6,11 @@
 
 import type { Tool, Context, SerializedContext, Provider, ActiveToolCall } from '@elfenlabs/nous'
 
+// ── Reply Channels ──────────────────────────────────────────────────────────
+
+/** Map of ephemeral reply channels used by kx.request() and agent_ask */
+export type ReplyChannelMap = Map<string, (response: string) => void>
+
 // ── Messages ────────────────────────────────────────────────────────────────
 
 /** A message routed through the Keryx message bus */

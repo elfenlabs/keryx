@@ -45,12 +45,6 @@ export function buildPromptAddendum(opts: {
   lines.push('- Body: (provided as user message)')
   lines.push('')
 
-  // Reply instructions
-  if (message.replyTo) {
-    lines.push(`To reply to the original requester, use message_send with to="${message.replyTo}".`)
-    lines.push('')
-  }
-
   // Daemon-injected segments
   if (daemonSegments.length > 0) {
     for (const segment of daemonSegments) {

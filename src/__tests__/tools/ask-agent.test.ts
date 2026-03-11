@@ -34,7 +34,6 @@ describe('agent_ask tool', () => {
       defaultProvider: {
         generate: async (params: any) => {
           const systemMsg = params.messages.find((m: any) => m.role === 'system')
-          const hasToolResult = params.messages.some((m: any) => m.role === 'tool')
 
           // Analyst: use agent_ask to query researcher
           if (systemMsg.content.includes('agent "analyst"')) {
@@ -48,26 +47,15 @@ describe('agent_ask tool', () => {
                 }],
               }
             }
-            // After tool result: capture and respond
+            // After tool result: capture the researcher's response
             const toolResult = params.messages.find((m: any) => m.role === 'tool')
             analystResult = toolResult?.content ?? ''
             return { content: 'Analysis complete.' }
           }
 
-          // Researcher: reply via message_send to the replyTo channel
+          // Researcher: just respond with content (final output = reply)
           if (systemMsg.content.includes('agent "researcher"')) {
-            if (hasToolResult) {
-              return { content: 'Replied.' }
-            }
-            const replyMatch = systemMsg.content.match(/message_send with to="(ext-[^"]+)"/)
-            const replyTo = replyMatch?.[1] ?? 'unknown'
-            return {
-              toolCalls: [{
-                id: 'call-r1',
-                name: 'message_send',
-                arguments: { to: replyTo, body: 'Market is bullish on tech.' },
-              }],
-            }
+            return { content: 'Market is bullish on tech.' }
           }
 
           return { content: 'ok' }
