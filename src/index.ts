@@ -15,6 +15,7 @@ export { contextd } from './daemons/contextd.js'
 export { crond } from './daemons/crond.js'
 export { keryxd } from './daemons/keryxd.js'
 export { artifactd } from './daemons/artifactd.js'
+export { secretd } from './daemons/secretd.js'
 
 // Types
 export type {
@@ -23,7 +24,8 @@ export type {
   DaemonDefinition,
   MessageContext,
   ActivationContext,
-  ToolCallContext,
+  PreToolCallContext,
+  PostToolCallContext,
   PostActivationContext,
   KeryxConfig,
   KeryxInstance,
@@ -37,3 +39,4 @@ export type { LoggerdOptions } from './daemons/loggerd.js'
 export type { CronJob, CrondOptions } from './daemons/crond.js'
 export type { KeryxdConfig } from './daemons/keryxd.js'
 export type { ArtifactdOptions, ArtifactStorage, ArtifactMeta, ArtifactInfo } from './daemons/artifactd.js'
+export type { SecretdOptions, SecretConfig, SecretStorage } from './daemons/secretd.js'

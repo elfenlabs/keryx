@@ -164,7 +164,6 @@ export class ProcessManager {
     // Collect daemon-provisioned tools and prompt segments
     const daemonTools: Tool<any>[] = []
     const promptSegments: string[] = []
-    const toolToDaemon = new Map<string, string>()
 
     const activationCtx: ActivationContext = {
       agentId,
@@ -184,13 +183,6 @@ export class ProcessManager {
     // Run onPreActivation hooks (daemons inject tools + prompt segments, restore context)
     await this.daemons.runOnPreActivation(activationCtx)
 
-    // Build tool-to-daemon mapping for daemon tools
-    for (const t of daemonTools) {
-      // Find which daemon provided this tool by checking all daemons
-      // For simplicity, we track during addTools which daemon is active
-      // Since hooks run in order, we can associate tools with the daemon that added them
-    }
-
     // Create the send_message and ask_agent tools for this activation
     const sendMessageTool = createSendMessageTool({
       fromAgentId: agentId,
@@ -208,12 +200,6 @@ export class ProcessManager {
     // Merge all tools: send_message + ask_agent + static agent tools + daemon tools
     const staticTools = agentDef.tools ?? []
     const allTools = [sendMessageTool, askAgentTool, ...staticTools, ...daemonTools]
-
-    // Build tool routing: which tools belong to which daemon
-    for (const t of daemonTools) {
-      // We need to track daemon ownership — enhance ActivationContext
-      // For now, daemon tools execute directly (their execute is the daemon's logic)
-    }
 
     // Build system prompt addendum
     const addendum = buildPromptAddendum({
@@ -250,6 +236,12 @@ export class ProcessManager {
         instruction: fullInstruction,
         tools: allTools,
         signal: abortController.signal,
+        onBeforeToolCall: async (tool, args) => {
+          await this.daemons.runOnPreToolCall({ agentId, toolId: tool.id, args })
+        },
+        onAfterToolCall: async (tool, args, result) => {
+          await this.daemons.runOnPostToolCall({ agentId, toolId: tool.id, args, result })
+        },
       })
 
       // Subscribe to live state changes for keryxd

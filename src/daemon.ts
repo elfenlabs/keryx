@@ -9,7 +9,8 @@ import type {
   DaemonDefinition,
   MessageContext,
   ActivationContext,
-  ToolCallContext,
+  PreToolCallContext,
+  PostToolCallContext,
   PostActivationContext,
 } from './types.js'
 
@@ -65,13 +66,22 @@ export class DaemonManager {
     }
   }
 
-  /** Route a tool call to the owning daemon's onToolCall */
-  async routeToolCall(daemonId: string, ctx: ToolCallContext): Promise<unknown> {
-    const daemon = this.daemons.find(d => d.id === daemonId)
-    if (!daemon?.onToolCall) {
-      throw new Error(`Daemon "${daemonId}" does not handle tool calls`)
+  /** Run onPreToolCall on all daemons in order (broadcast — args are mutable) */
+  async runOnPreToolCall(ctx: PreToolCallContext): Promise<void> {
+    for (const daemon of this.daemons) {
+      if (daemon.onPreToolCall) {
+        await daemon.onPreToolCall(ctx)
+      }
     }
-    return daemon.onToolCall(ctx)
+  }
+
+  /** Run onPostToolCall on all daemons in order (broadcast — read-only) */
+  async runOnPostToolCall(ctx: PostToolCallContext): Promise<void> {
+    for (const daemon of this.daemons) {
+      if (daemon.onPostToolCall) {
+        await daemon.onPostToolCall(ctx)
+      }
+    }
   }
 
   /** Run onPostActivation on all daemons in order */
@@ -83,3 +93,4 @@ export class DaemonManager {
     }
   }
 }
+

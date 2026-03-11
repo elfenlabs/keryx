@@ -57,11 +57,19 @@ export type ActivationContext = {
   addPromptSegment: (segment: string) => void
 }
 
-/** Context passed to onToolCall hooks */
-export type ToolCallContext = {
+/** Context passed to onPreToolCall hooks (broadcast, args are mutable) */
+export type PreToolCallContext = {
   agentId: string
   toolId: string
   args: Record<string, unknown>
+}
+
+/** Context passed to onPostToolCall hooks (broadcast, read-only) */
+export type PostToolCallContext = {
+  agentId: string
+  toolId: string
+  args: Record<string, unknown>
+  result: unknown
 }
 
 /** Context passed to onPostActivation hooks */
@@ -83,7 +91,8 @@ export type DaemonDefinition = {
   onStop?: () => void | Promise<void>
   onMessageReceived?: (ctx: MessageContext) => void | Promise<void>
   onPreActivation?: (ctx: ActivationContext) => void | Promise<void>
-  onToolCall?: (ctx: ToolCallContext) => unknown | Promise<unknown>
+  onPreToolCall?: (ctx: PreToolCallContext) => void | Promise<void>
+  onPostToolCall?: (ctx: PostToolCallContext) => void | Promise<void>
   onPostActivation?: (ctx: PostActivationContext) => void | Promise<void>
 }
 
