@@ -86,10 +86,14 @@ export type PostActivationContext = {
 /** Context passed to onAgentStream hooks */
 export type AgentStreamContext = {
   agentId: string
-  type: 'thinking' | 'output'
+  type: 'thinking' | 'output' | 'tool_call'
   phase: 'start' | 'chunk' | 'end'
   /** Present only when phase === 'chunk' */
   chunk?: string
+  /** Present when type === 'tool_call' */
+  toolIndex?: number
+  toolCallId?: string
+  toolName?: string
 }
 
 /** A daemon (middleware service) registered with Keryx */

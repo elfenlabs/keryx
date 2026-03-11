@@ -254,6 +254,18 @@ export class ProcessManager {
         onOutputEnd: () => {
           this.daemons.runOnAgentStream({ agentId, type: 'output', phase: 'end' })
         },
+        onToolCall: (index, id, name) => {
+          this.daemons.runOnAgentStream({
+            agentId, type: 'tool_call', phase: 'start',
+            toolIndex: index, toolCallId: id, toolName: name,
+          })
+        },
+        onToolCallArgs: (index, argChunk) => {
+          this.daemons.runOnAgentStream({
+            agentId, type: 'tool_call', phase: 'chunk',
+            toolIndex: index, chunk: argChunk,
+          })
+        },
         onBeforeToolCall: async (tool, args) => {
           await this.daemons.runOnPreToolCall({ agentId, toolId: tool.id, args })
         },

@@ -11,9 +11,13 @@ import type { DaemonDefinition, AgentStreamContext } from '../types.js'
 /** A stream event emitted by streamd */
 export type StreamEvent = {
   agentId: string
-  type: 'thinking' | 'output'
+  type: 'thinking' | 'output' | 'tool_call'
   phase: 'start' | 'chunk' | 'end'
   chunk?: string
+  /** Present when type === 'tool_call' */
+  toolIndex?: number
+  toolCallId?: string
+  toolName?: string
   timestamp: Date
 }
 
@@ -54,6 +58,9 @@ export function streamd(): StreamdHandle {
       type: ctx.type,
       phase: ctx.phase,
       chunk: ctx.chunk,
+      toolIndex: ctx.toolIndex,
+      toolCallId: ctx.toolCallId,
+      toolName: ctx.toolName,
       timestamp: new Date(),
     }
     for (const cb of subscribers) {

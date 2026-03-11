@@ -175,4 +175,57 @@ describe('streamd', () => {
 
     await kx.stop()
   })
+
+  test('subscriber receives tool call stream events', async () => {
+    const events: StreamEvent[] = []
+    const stream = streamd()
+    let callCount = 0
+
+    const kx = createKeryx({
+      agents: [makeAgent('coder', 'Coder Agent')],
+      daemons: [stream.daemon],
+      pollingInterval: 10,
+      defaultProvider: {
+        generate: async (params) => {
+          callCount++
+          if (callCount === 1) {
+            // Simulate tool call streaming
+            params.stream?.onToolCallStart?.(0, 'call-1', 'read_file')
+            params.stream?.onToolCallDelta?.(0, '{"path":')
+            params.stream?.onToolCallDelta?.(0, '"/src/main.ts"}')
+            return {
+              toolCalls: [{
+                id: 'call-1',
+                name: 'read_file',
+                arguments: { path: '/src/main.ts' },
+              }],
+            }
+          }
+          return { content: 'Done reading.' }
+        },
+      },
+    })
+
+    stream.subscribe((e) => events.push(e))
+
+    kx.start()
+    await kx.send({ to: 'coder', body: 'Read the file' })
+    await wait(300)
+
+    // Should have tool_call start event with metadata
+    const startEvents = events.filter(e => e.type === 'tool_call' && e.phase === 'start')
+    expect(startEvents.length).toBe(1)
+    expect(startEvents[0]!.toolIndex).toBe(0)
+    expect(startEvents[0]!.toolCallId).toBe('call-1')
+    expect(startEvents[0]!.toolName).toBe('read_file')
+
+    // Should have tool_call chunk events with arg fragments
+    const chunkEvents = events.filter(e => e.type === 'tool_call' && e.phase === 'chunk')
+    expect(chunkEvents.length).toBe(2)
+    expect(chunkEvents[0]!.chunk).toBe('{"path":')
+    expect(chunkEvents[1]!.chunk).toBe('"/src/main.ts"}')
+    expect(chunkEvents[0]!.toolIndex).toBe(0)
+
+    await kx.stop()
+  })
 })
