@@ -8,7 +8,7 @@
 import { createTool } from '@elfenlabs/nous'
 import type { Inbox } from '../inbox.js'
 import type { Registry } from '../registry.js'
-import type { ReplyChannelMap } from '../types.js'
+import type { PendingReplyMap } from '../types.js'
 
 const DEFAULT_TIMEOUT_MS = 120_000 // 2 minutes
 
@@ -16,9 +16,9 @@ export function createAskAgentTool(opts: {
   fromAgentId: string
   inbox: Inbox
   registry: Registry
-  replyChannels: ReplyChannelMap
+  pendingReplies: PendingReplyMap
 }) {
-  const { fromAgentId, inbox, registry, replyChannels } = opts
+  const { fromAgentId, inbox, registry, pendingReplies } = opts
 
   return createTool({
     id: 'agent_ask',
@@ -54,31 +54,32 @@ export function createAskAgentTool(opts: {
         return 'Error: Cannot ask yourself. Use a different agent.'
       }
 
-      const channelId = `ext-${crypto.randomUUID()}`
-
       return new Promise<string>((resolve) => {
+        const msgId = crypto.randomUUID()
+
         // Timeout handler
         const timer = setTimeout(() => {
-          replyChannels.delete(channelId)
+          pendingReplies.delete(msgId)
           resolve(`Error: ask_agent timed out after ${timeout}ms waiting for "${to}" to respond.`)
         }, timeout)
 
-        // Register reply channel
-        replyChannels.set(channelId, (response: string) => {
-          clearTimeout(timer)
-          replyChannels.delete(channelId)
-          resolve(response)
+        // Register pending reply
+        pendingReplies.set(msgId, {
+          resolve: (response: string) => {
+            clearTimeout(timer)
+            resolve(response)
+          },
+          timer,
         })
 
         // Enqueue message to target agent's inbox
         inbox.enqueue({
-          id: crypto.randomUUID(),
+          id: msgId,
           to,
           from: fromAgentId,
           body,
           priority: 0,
           force: false,
-          replyTo: channelId,
           createdAt: new Date(),
         })
       })

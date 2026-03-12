@@ -229,7 +229,7 @@ describe('Keryx Integration', () => {
     await kx.send({ to: 'agent-a', body: 'Start chain' })
     await wait(500)
 
-    expect(agentBReceived).toContain('Hello from A!')
+    expect(agentBReceived.some(m => m.includes('Hello from A!'))).toBe(true)
     await kx.stop()
   })
 

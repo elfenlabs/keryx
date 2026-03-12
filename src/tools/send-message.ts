@@ -43,7 +43,6 @@ export function createSendMessageTool(opts: {
         body,
         priority,
         force: false,
-        replyTo: fromAgentId,
         createdAt: new Date(),
       })
 

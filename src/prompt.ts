@@ -35,9 +35,6 @@ export function buildPromptAddendum(opts: {
   // Current message context
   lines.push('Current message:')
   lines.push(`- From: ${message.from ?? 'external'}`)
-  if (message.replyTo) {
-    lines.push(`- Reply-to: ${message.replyTo}`)
-  }
   lines.push(`- Priority: ${message.priority}`)
   if (message.metadata && Object.keys(message.metadata).length > 0) {
     lines.push(`- Metadata: ${JSON.stringify(message.metadata)}`)

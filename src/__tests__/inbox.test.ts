@@ -14,7 +14,6 @@ function makeMsg(overrides: Partial<Message> = {}): Message {
     body: 'test',
     priority: 0,
     force: false,
-    replyTo: null,
     createdAt: new Date(),
     ...overrides,
   }

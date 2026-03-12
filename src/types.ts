@@ -6,10 +6,17 @@
 
 import type { Tool, Context, SerializedContext, Provider, ActiveToolCall } from '@elfenlabs/nous'
 
-// ── Reply Channels ──────────────────────────────────────────────────────────
+// ── Pending Replies ─────────────────────────────────────────────────────────
 
-/** Map of ephemeral reply channels used by kx.request() and agent_ask */
-export type ReplyChannelMap = Map<string, (response: string) => void>
+/** A pending reply awaiting an agent's response */
+export type PendingReply = {
+  resolve: (response: string) => void
+  reject?: (error: Error) => void
+  timer?: ReturnType<typeof setTimeout>
+}
+
+/** Map of pending replies keyed by message ID */
+export type PendingReplyMap = Map<string, PendingReply>
 
 // ── Messages ────────────────────────────────────────────────────────────────
 
@@ -21,7 +28,6 @@ export type Message = {
   body: string
   priority: number
   force: boolean
-  replyTo: string | null
   metadata?: Record<string, unknown>
   createdAt: Date
 
@@ -135,7 +141,6 @@ export type SendOptions = {
   from?: string | null
   priority?: number
   force?: boolean
-  replyTo?: string | null
   metadata?: Record<string, unknown>
 }
 
@@ -144,6 +149,7 @@ export type RequestOptions = {
   to: string
   body: string
   priority?: number
+  force?: boolean
   metadata?: Record<string, unknown>
   signal?: AbortSignal
 }

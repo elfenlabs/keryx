@@ -11,7 +11,7 @@ import type {
   SendOptions,
   RequestOptions,
   DaemonDefinition,
-  ReplyChannelMap,
+  PendingReplyMap,
 } from './types.js'
 import { Inbox } from './inbox.js'
 import { Registry } from './registry.js'
@@ -39,7 +39,7 @@ export function createKeryx(config: KeryxConfig): KeryxInstance {
   const inbox = new Inbox()
   const registry = new Registry()
   const daemonManager = new DaemonManager(config.daemons)
-  const replyChannels: ReplyChannelMap = new Map()
+  const pendingReplies: PendingReplyMap = new Map()
   const pollingInterval = config.pollingInterval ?? 100
 
   // Register all agents
@@ -52,7 +52,7 @@ export function createKeryx(config: KeryxConfig): KeryxInstance {
     inbox,
     registry,
     daemons: daemonManager,
-    replyChannels,
+    pendingReplies,
     pollingInterval,
     defaultProvider: config.defaultProvider,
   })
@@ -69,7 +69,6 @@ export function createKeryx(config: KeryxConfig): KeryxInstance {
         body: opts.body,
         priority: opts.priority ?? 0,
         force: opts.force ?? false,
-        replyTo: opts.replyTo ?? null,
         metadata: opts.metadata,
         createdAt: new Date(),
       }
@@ -83,10 +82,10 @@ export function createKeryx(config: KeryxConfig): KeryxInstance {
 
     /**
      * Request-reply: send a message and wait for a response.
-     * Creates an ephemeral reply channel that the agent replies to.
+     * Registers a pending reply keyed by message ID, resolved when the agent finishes.
      */
     async request(opts: RequestOptions): Promise<string> {
-      const channelId = `ext-${crypto.randomUUID()}`
+      const msgId = crypto.randomUUID()
 
       return new Promise<string>((resolve, reject) => {
         // Handle abort signal
@@ -96,26 +95,34 @@ export function createKeryx(config: KeryxConfig): KeryxInstance {
             return
           }
           opts.signal.addEventListener('abort', () => {
-            replyChannels.delete(channelId)
+            pendingReplies.delete(msgId)
             reject(new Error('Request aborted'))
           }, { once: true })
         }
 
-        // Register the reply channel
-        replyChannels.set(channelId, (response: string) => {
-          replyChannels.delete(channelId)
-          resolve(response)
-        })
+        // Register the pending reply
+        pendingReplies.set(msgId, { resolve, reject })
 
-        // Send the message with the reply channel
-        instance.send({
+        // Build and enqueue the message
+        const msg = {
+          id: msgId,
           to: opts.to,
+          from: null,
           body: opts.body,
           priority: opts.priority ?? 0,
-          replyTo: channelId,
+          force: opts.force ?? false,
           metadata: opts.metadata,
-        }).catch((err) => {
-          replyChannels.delete(channelId)
+          createdAt: new Date(),
+        }
+
+        if (!registry.has(msg.to)) {
+          pendingReplies.delete(msgId)
+          reject(new Error(`Unknown agent: "${msg.to}"`))
+          return
+        }
+
+        pm.enqueueAndProcess(msg).catch((err) => {
+          pendingReplies.delete(msgId)
           reject(err)
         })
       })

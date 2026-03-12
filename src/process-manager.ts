@@ -12,7 +12,7 @@ import type {
   Message,
   ActivationContext,
   AfterActivationContext,
-  ReplyChannelMap,
+  PendingReplyMap,
 } from './types.js'
 import type { Provider } from '@elfenlabs/nous'
 import { Inbox } from './inbox.js'
@@ -26,7 +26,7 @@ export class ProcessManager {
   readonly inbox: Inbox
   readonly registry: Registry
   readonly daemons: DaemonManager
-  readonly replyChannels: ReplyChannelMap
+  readonly pendingReplies: PendingReplyMap
 
   private activeLocks = new Map<string, Promise<void>>()
   readonly abortControllers = new Map<string, AbortController>()
@@ -44,14 +44,14 @@ export class ProcessManager {
     inbox: Inbox
     registry: Registry
     daemons: DaemonManager
-    replyChannels: ReplyChannelMap
+    pendingReplies: PendingReplyMap
     pollingInterval: number
     defaultProvider: Provider
   }) {
     this.inbox = opts.inbox
     this.registry = opts.registry
     this.daemons = opts.daemons
-    this.replyChannels = opts.replyChannels
+    this.pendingReplies = opts.pendingReplies
     this.pollingInterval = opts.pollingInterval
     this.defaultProvider = opts.defaultProvider
   }
@@ -198,7 +198,7 @@ export class ProcessManager {
       fromAgentId: agentId,
       inbox: this.inbox,
       registry: this.registry,
-      replyChannels: this.replyChannels,
+      pendingReplies: this.pendingReplies,
     })
 
     // Merge all tools: send_message + ask_agent + static agent tools + daemon tools
@@ -216,8 +216,10 @@ export class ProcessManager {
 
     const fullInstruction = addendum + '\n' + agentDef.instruction
 
-    // Push the message body as user message
-    ctx.push({ role: 'user', content: msg.body })
+    // Push the message body as user message (prefix with sender for inter-agent clarity)
+    const isAgentSender = msg.from ? this.registry.has(msg.from) : false
+    const body = isAgentSender ? `[From ${msg.from}]\n${msg.body}` : msg.body
+    ctx.push({ role: 'user', content: body })
 
     // Create abort controller for this activation
     const abortController = new AbortController()
@@ -306,7 +308,6 @@ export class ProcessManager {
             body: `Message to "${msg.to}" failed: ${error.message}`,
             priority: 0,
             force: false,
-            replyTo: null,
             metadata: {
               type: 'delivery_failure',
               originalMessageId: msg.id,
@@ -335,12 +336,12 @@ export class ProcessManager {
       }
       await this.daemons.runOnAfterActivation(postCtx)
 
-      // Resolve reply channel with agent's final output (used by kx.request and agent_ask)
-      if (msg.replyTo?.startsWith('ext-')) {
-        const resolver = this.replyChannels.get(msg.replyTo)
-        if (resolver) {
-          resolver(response ?? '')
-        }
+      // Resolve pending reply with agent's final output (used by kx.request and agent_ask)
+      const pending = this.pendingReplies.get(msg.id)
+      if (pending) {
+        this.pendingReplies.delete(msg.id)
+        if (error) pending.reject?.(error)
+        else pending.resolve(response ?? '')
       }
     }
   }
