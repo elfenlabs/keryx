@@ -2,7 +2,8 @@
  * Keryx Integration Tests — Mocked Nous Runner
  *
  * Tests the full orchestration flow: message delivery, request-reply,
- * multi-agent messaging, force interrupts, daemon hooks, and failure notifications.
+ * multi-agent messaging, force interrupts, daemon hooks, failure notifications,
+ * and dynamic agent spawn/destroy lifecycle.
  *
  * Nous's runAgent() is mocked to simulate agent behavior without LLM calls.
  */
@@ -31,13 +32,11 @@ function createMockProvider(behavior: MockBehavior): Provider {
   }
 }
 
-/** Helper to create a simple agent definition */
-function makeAgent(id: string, name: string, overrides?: Partial<AgentDefinition>): AgentDefinition {
+/** Helper to create a simple agent definition (template — no id) */
+function makeAgent(name: string, overrides?: Partial<AgentDefinition>): AgentDefinition {
   return {
-    id,
     name,
     instruction: `You are ${name}.`,
-
     ...overrides,
   }
 }
@@ -57,15 +56,14 @@ describe('Keryx Integration', () => {
   let providerCalls: { agentId: string; messages: any[]; tools: any[] }[]
   let providerBehaviors: Map<string, MockBehavior>
 
-  function setupKeryx(
-    agents: AgentDefinition[],
+  async function setupKeryx(
+    agents: { id: string; def: AgentDefinition }[],
     daemons?: DaemonDefinition[],
-  ): KeryxInstance {
+  ): Promise<KeryxInstance> {
     providerCalls = []
     providerBehaviors = new Map()
 
     const kx = createKeryx({
-      agents,
       daemons,
       pollingInterval: 10,
       defaultProvider: {
@@ -94,13 +92,18 @@ describe('Keryx Integration', () => {
       },
     })
 
+    // Spawn all agents
+    for (const { id, def } of agents) {
+      await kx.agents.spawn(id, def)
+    }
+
     return kx
   }
 
   // ─── Basic Message Delivery ───────────────────────────────────────────
 
   test('send() delivers message and agent processes it', async () => {
-    const kx = setupKeryx([makeAgent('echo', 'Echo Agent')])
+    const kx = await setupKeryx([{ id: 'echo', def: makeAgent('Echo Agent') }])
     kx.start()
 
     await kx.send({ to: 'echo', body: 'Hello world' })
@@ -119,7 +122,7 @@ describe('Keryx Integration', () => {
   })
 
   test('send() throws for unknown agent', async () => {
-    const kx = setupKeryx([makeAgent('echo', 'Echo')])
+    const kx = await setupKeryx([{ id: 'echo', def: makeAgent('Echo') }])
     kx.start()
 
     await expect(kx.send({ to: 'nonexistent', body: 'hi' })).rejects.toThrow('Unknown agent')
@@ -131,7 +134,6 @@ describe('Keryx Integration', () => {
 
   test('request() returns agent response via final output', async () => {
     const kx = createKeryx({
-      agents: [makeAgent('responder', 'Responder')],
       pollingInterval: 10,
       defaultProvider: {
         generate: async () => {
@@ -140,6 +142,7 @@ describe('Keryx Integration', () => {
       },
     })
 
+    await kx.agents.spawn('responder', makeAgent('Responder'))
     kx.start()
     const response = await kx.request({ to: 'responder', body: 'What is the answer?' })
     expect(response).toBe('The answer is 42')
@@ -149,7 +152,6 @@ describe('Keryx Integration', () => {
 
   test('request() rejects on abort', async () => {
     const kx = createKeryx({
-      agents: [makeAgent('slow', 'Slow Agent')],
       pollingInterval: 10,
       defaultProvider: {
         generate: async (params: any) => {
@@ -166,6 +168,7 @@ describe('Keryx Integration', () => {
       },
     })
 
+    await kx.agents.spawn('slow', makeAgent('Slow Agent'))
     kx.start()
     const controller = new AbortController()
     const promise = kx.request({
@@ -192,10 +195,6 @@ describe('Keryx Integration', () => {
     let msgCallCount = 0
 
     const kx = createKeryx({
-      agents: [
-        makeAgent('agent-a', 'Agent A'),
-        makeAgent('agent-b', 'Agent B'),
-      ],
       pollingInterval: 10,
       defaultProvider: {
         generate: async (params: any) => {
@@ -225,6 +224,8 @@ describe('Keryx Integration', () => {
       },
     })
 
+    await kx.agents.spawn('agent-a', makeAgent('Agent A'))
+    await kx.agents.spawn('agent-b', makeAgent('Agent B'))
     kx.start()
     await kx.send({ to: 'agent-a', body: 'Start chain' })
     await wait(500)
@@ -239,10 +240,6 @@ describe('Keryx Integration', () => {
     let capturedSystemPrompt = ''
 
     const kx = createKeryx({
-      agents: [
-        makeAgent('manager', 'Manager'),
-        makeAgent('worker', 'Worker'),
-      ],
       pollingInterval: 10,
       defaultProvider: {
         generate: async (params: any) => {
@@ -253,6 +250,8 @@ describe('Keryx Integration', () => {
       },
     })
 
+    await kx.agents.spawn('manager', makeAgent('Manager'))
+    await kx.agents.spawn('worker', makeAgent('Worker'))
     kx.start()
     await kx.send({ to: 'manager', body: 'test' })
     await wait(200)
@@ -271,7 +270,6 @@ describe('Keryx Integration', () => {
     let capturedTools: any[] = []
 
     const kx = createKeryx({
-      agents: [makeAgent('test-agent', 'Test')],
       pollingInterval: 10,
       defaultProvider: {
         generate: async (params: any) => {
@@ -281,6 +279,7 @@ describe('Keryx Integration', () => {
       },
     })
 
+    await kx.agents.spawn('test-agent', makeAgent('Test'))
     kx.start()
     await kx.send({ to: 'test-agent', body: 'test' })
     await wait(200)
@@ -314,7 +313,6 @@ describe('Keryx Integration', () => {
     }
 
     const kx = createKeryx({
-      agents: [makeAgent('test', 'Test')],
       daemons: [daemon2, daemon1], // deliberately out of order
       pollingInterval: 10,
       defaultProvider: {
@@ -322,6 +320,7 @@ describe('Keryx Integration', () => {
       },
     })
 
+    await kx.agents.spawn('test', makeAgent('Test'))
     kx.start()
     await kx.send({ to: 'test', body: 'hello' })
     await wait(200)
@@ -357,7 +356,6 @@ describe('Keryx Integration', () => {
     }
 
     const kx = createKeryx({
-      agents: [makeAgent('test', 'Test')],
       daemons: [daemon],
       pollingInterval: 10,
       defaultProvider: {
@@ -368,6 +366,7 @@ describe('Keryx Integration', () => {
       },
     })
 
+    await kx.agents.spawn('test', makeAgent('Test'))
     kx.start()
     await kx.send({ to: 'test', body: 'hello' })
     await wait(200)
@@ -391,7 +390,6 @@ describe('Keryx Integration', () => {
     }
 
     const kx = createKeryx({
-      agents: [makeAgent('test', 'Test')],
       daemons: [daemon],
       pollingInterval: 10,
       defaultProvider: {
@@ -402,6 +400,7 @@ describe('Keryx Integration', () => {
       },
     })
 
+    await kx.agents.spawn('test', makeAgent('Test'))
     kx.start()
     await kx.send({ to: 'test', body: 'test' })
     await wait(200)
@@ -414,7 +413,6 @@ describe('Keryx Integration', () => {
 
   test('daemons.register/deregister/list work at runtime', () => {
     const kx = createKeryx({
-      agents: [makeAgent('test', 'Test')],
       pollingInterval: 100,
       defaultProvider: {
         generate: async () => ({ content: 'ok' }),
@@ -443,10 +441,6 @@ describe('Keryx Integration', () => {
     const receivedByA: string[] = []
 
     const kx = createKeryx({
-      agents: [
-        makeAgent('agent-a', 'Agent A'),
-        makeAgent('agent-b', 'Agent B'),
-      ],
       pollingInterval: 10,
       defaultProvider: {
         generate: async (params: any) => {
@@ -466,6 +460,8 @@ describe('Keryx Integration', () => {
       },
     })
 
+    await kx.agents.spawn('agent-a', makeAgent('Agent A'))
+    await kx.agents.spawn('agent-b', makeAgent('Agent B'))
     kx.start()
     // Send a message from agent-a to agent-b (simulated via from field)
     await kx.send({ to: 'agent-b', body: 'Do something', from: 'agent-a' })
@@ -486,7 +482,6 @@ describe('Keryx Integration', () => {
     let maxConcurrent = 0
 
     const kx = createKeryx({
-      agents: [makeAgent('serial', 'Serial Agent')],
       pollingInterval: 10,
       defaultProvider: {
         generate: async () => {
@@ -499,6 +494,7 @@ describe('Keryx Integration', () => {
       },
     })
 
+    await kx.agents.spawn('serial', makeAgent('Serial Agent'))
     kx.start()
 
     // Send 3 messages rapidly
@@ -530,7 +526,6 @@ describe('Keryx Integration', () => {
     }
 
     const kx = createKeryx({
-      agents: [makeAgent('test', 'Test')],
       daemons: [daemon],
       pollingInterval: 10,
       defaultProvider: {
@@ -538,6 +533,7 @@ describe('Keryx Integration', () => {
       },
     })
 
+    await kx.agents.spawn('test', makeAgent('Test'))
     kx.start()
     await kx.send({ to: 'test', body: 'test' })
     await wait(200)
@@ -560,7 +556,6 @@ describe('Keryx Integration', () => {
     }
 
     const kx = createKeryx({
-      agents: [makeAgent('fail', 'Fail Agent')],
       daemons: [daemon],
       pollingInterval: 10,
       defaultProvider: {
@@ -568,12 +563,236 @@ describe('Keryx Integration', () => {
       },
     })
 
+    await kx.agents.spawn('fail', makeAgent('Fail Agent'))
     kx.start()
     await kx.send({ to: 'fail', body: 'crash' })
     await wait(200)
 
     expect(capturedError).not.toBeNull()
     expect(capturedError!.message).toBe('Boom!')
+
+    await kx.stop()
+  })
+
+  // ─── Agent Spawn/Destroy Lifecycle ────────────────────────────────────
+
+  test('spawn returns AgentInstance with correct fields', async () => {
+    const kx = createKeryx({
+      pollingInterval: 10,
+      defaultProvider: { generate: async () => ({ content: 'ok' }) },
+    })
+
+    const def = makeAgent('My Agent')
+    const instance = await kx.agents.spawn('my-agent', def)
+
+    expect(instance.id).toBe('my-agent')
+    expect(instance.name).toBe('My Agent')
+    expect(instance.instruction).toBe('You are My Agent.')
+    expect(instance.spawnTools).toEqual([])
+    expect(instance.spawnPromptSegments).toEqual([])
+  })
+
+  test('spawn rejects duplicate ID', async () => {
+    const kx = createKeryx({
+      pollingInterval: 10,
+      defaultProvider: { generate: async () => ({ content: 'ok' }) },
+    })
+
+    await kx.agents.spawn('dup', makeAgent('First'))
+    await expect(kx.agents.spawn('dup', makeAgent('Second'))).rejects.toThrow('already registered')
+  })
+
+  test('destroy removes agent from registry', async () => {
+    const kx = createKeryx({
+      pollingInterval: 10,
+      defaultProvider: { generate: async () => ({ content: 'ok' }) },
+    })
+
+    await kx.agents.spawn('doomed', makeAgent('Doomed'))
+    kx.start()
+
+    // Agent exists
+    expect(kx.agents.getStatus('doomed')).toBeDefined()
+
+    await kx.agents.destroy('doomed')
+    await wait(200)
+
+    // Agent no longer exists
+    expect(kx.agents.getStatus('doomed')).toBeUndefined()
+    await expect(kx.send({ to: 'doomed', body: 'hello' })).rejects.toThrow('Unknown agent')
+
+    await kx.stop()
+  })
+
+  test('destroy flushes inbox', async () => {
+    const kx = createKeryx({
+      pollingInterval: 10,
+      defaultProvider: {
+        generate: async () => {
+          await wait(200) // slow agent
+          return { content: 'ok' }
+        },
+      },
+    })
+
+    await kx.agents.spawn('busy', makeAgent('Busy Agent'))
+    kx.start()
+
+    // Send a message to make the agent busy, then queue more
+    await kx.send({ to: 'busy', body: 'first' })
+    await wait(20) // let it start processing
+    await kx.send({ to: 'busy', body: 'second' })
+    await kx.send({ to: 'busy', body: 'third' })
+
+    // Destroy with force to interrupt active processing
+    await kx.agents.destroy('busy', { force: true })
+    await wait(200)
+
+    // Check inbox is empty (agent is gone)
+    expect(kx.agents.getInbox('busy')).toEqual([])
+
+    await kx.stop()
+  })
+
+  test('onAgentSpawn hook fires and can inject tools', async () => {
+    let spawnedId = ''
+    let capturedTools: any[] = []
+
+    const daemon: DaemonDefinition = {
+      id: 'spawn-watcher',
+      order: 1,
+      onAgentSpawn: (ctx) => {
+        spawnedId = ctx.agentId
+        ctx.addTools([
+          createTool({
+            id: 'spawn_tool',
+            description: 'Injected at spawn time',
+            execute: async () => 'spawn result',
+          }),
+        ])
+      },
+    }
+
+    const kx = createKeryx({
+      daemons: [daemon],
+      pollingInterval: 10,
+      defaultProvider: {
+        generate: async (params: any) => {
+          capturedTools = params.tools ?? []
+          return { content: 'ok' }
+        },
+      },
+    })
+
+    const instance = await kx.agents.spawn('spawned', makeAgent('Spawned'))
+    expect(spawnedId).toBe('spawned')
+    expect(instance.spawnTools.length).toBe(1)
+
+    // Verify spawn-time tools appear in activation
+    kx.start()
+    await kx.send({ to: 'spawned', body: 'test' })
+    await wait(200)
+
+    const spawnTool = capturedTools.find((t: any) => t.name === 'spawn_tool')
+    expect(spawnTool).toBeDefined()
+
+    await kx.stop()
+  })
+
+  test('onAgentDestroy hook fires on destroy', async () => {
+    let destroyedId = ''
+
+    const daemon: DaemonDefinition = {
+      id: 'destroy-watcher',
+      order: 1,
+      onAgentDestroy: (ctx) => {
+        destroyedId = ctx.agentId
+      },
+    }
+
+    const kx = createKeryx({
+      daemons: [daemon],
+      pollingInterval: 10,
+      defaultProvider: { generate: async () => ({ content: 'ok' }) },
+    })
+
+    await kx.agents.spawn('target', makeAgent('Target'))
+    kx.start()
+
+    await kx.agents.destroy('target')
+    await wait(200)
+
+    expect(destroyedId).toBe('target')
+
+    await kx.stop()
+  })
+
+  test('spawn-time prompt segments persist across activations', async () => {
+    const capturedPrompts: string[] = []
+
+    const daemon: DaemonDefinition = {
+      id: 'prompt-spawner',
+      order: 1,
+      onAgentSpawn: (ctx) => {
+        ctx.addPromptSegment('You have vault access.')
+      },
+    }
+
+    const kx = createKeryx({
+      daemons: [daemon],
+      pollingInterval: 10,
+      defaultProvider: {
+        generate: async (params: any) => {
+          const systemMsg = params.messages.find((m: any) => m.role === 'system')
+          capturedPrompts.push(systemMsg.content)
+          return { content: 'ok' }
+        },
+      },
+    })
+
+    await kx.agents.spawn('vaulted', makeAgent('Vaulted'))
+    kx.start()
+
+    // First activation
+    await kx.send({ to: 'vaulted', body: 'msg1' })
+    await wait(200)
+    // Second activation
+    await kx.send({ to: 'vaulted', body: 'msg2' })
+    await wait(200)
+
+    // Both activations should have the spawn-time prompt segment
+    expect(capturedPrompts.length).toBe(2)
+    expect(capturedPrompts[0]).toContain('You have vault access.')
+    expect(capturedPrompts[1]).toContain('You have vault access.')
+
+    await kx.stop()
+  })
+
+  test('agents have spawn and destroy tools', async () => {
+    let capturedTools: any[] = []
+
+    const kx = createKeryx({
+      pollingInterval: 10,
+      definitions: { helper: makeAgent('Helper') },
+      defaultProvider: {
+        generate: async (params: any) => {
+          capturedTools = params.tools ?? []
+          return { content: 'ok' }
+        },
+      },
+    })
+
+    await kx.agents.spawn('orchestrator', makeAgent('Orchestrator'))
+    kx.start()
+    await kx.send({ to: 'orchestrator', body: 'test' })
+    await wait(200)
+
+    const spawnTool = capturedTools.find((t: any) => t.name === 'agent_spawn')
+    const destroyTool = capturedTools.find((t: any) => t.name === 'agent_destroy')
+    expect(spawnTool).toBeDefined()
+    expect(destroyTool).toBeDefined()
+    // spawn tool should list available definitions
+    expect(spawnTool.description).toContain('helper')
 
     await kx.stop()
   })

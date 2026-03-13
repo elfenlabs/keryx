@@ -9,9 +9,8 @@ import { createKeryx } from '../../keryx.js'
 import { contextd } from '../../daemons/contextd.js'
 import type { AgentDefinition } from '../../types.js'
 
-function makeAgent(id: string, name: string, config?: Record<string, Record<string, unknown>>): AgentDefinition {
+function makeAgent(name: string, config?: Record<string, Record<string, unknown>>): AgentDefinition {
   return {
-    id,
     name,
     instruction: `You are ${name}.`,
     config,
@@ -27,9 +26,6 @@ describe('contextd', () => {
     const allMessages: any[][] = []
 
     const kx = createKeryx({
-      agents: [makeAgent('stateful', 'Stateful Agent', {
-        'context': { persist: true },
-      })],
       daemons: [contextd()],
       pollingInterval: 10,
       defaultProvider: {
@@ -41,6 +37,10 @@ describe('contextd', () => {
         },
       },
     })
+
+    await kx.agents.spawn('stateful', makeAgent('Stateful Agent', {
+      'context': { persist: true },
+    }))
 
     kx.start()
 
@@ -66,7 +66,6 @@ describe('contextd', () => {
     const allMessages: any[][] = []
 
     const kx = createKeryx({
-      agents: [makeAgent('stateless', 'Stateless Agent')], // no config
       daemons: [contextd()],
       pollingInterval: 10,
       defaultProvider: {
@@ -77,6 +76,8 @@ describe('contextd', () => {
         },
       },
     })
+
+    await kx.agents.spawn('stateless', makeAgent('Stateless Agent')) // no config
 
     kx.start()
 
@@ -98,9 +99,6 @@ describe('contextd', () => {
     const allMessages: any[][] = []
 
     const kx = createKeryx({
-      agents: [makeAgent('flaky', 'Flaky Agent', {
-        'context': { persist: true },
-      })],
       daemons: [contextd()],
       pollingInterval: 10,
       defaultProvider: {
@@ -117,6 +115,10 @@ describe('contextd', () => {
         },
       },
     })
+
+    await kx.agents.spawn('flaky', makeAgent('Flaky Agent', {
+      'context': { persist: true },
+    }))
 
     kx.start()
 

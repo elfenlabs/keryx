@@ -8,9 +8,8 @@ import { describe, test, expect } from 'bun:test'
 import { createKeryx } from '../../keryx.js'
 import type { AgentDefinition } from '../../types.js'
 
-function makeAgent(id: string, name: string): AgentDefinition {
+function makeAgent(name: string): AgentDefinition {
   return {
-    id,
     name,
     instruction: `You are ${name}.`,
   }
@@ -26,10 +25,6 @@ describe('agent_ask tool', () => {
     let analystCallCount = 0
 
     const kx = createKeryx({
-      agents: [
-        makeAgent('analyst', 'Analyst'),
-        makeAgent('researcher', 'Researcher'),
-      ],
       pollingInterval: 10,
       defaultProvider: {
         generate: async (params: any) => {
@@ -63,6 +58,9 @@ describe('agent_ask tool', () => {
       },
     })
 
+    await kx.agents.spawn('analyst', makeAgent('Analyst'))
+    await kx.agents.spawn('researcher', makeAgent('Researcher'))
+
     kx.start()
     await kx.send({ to: 'analyst', body: 'Analyze the market' })
     await wait(500)
@@ -76,7 +74,6 @@ describe('agent_ask tool', () => {
     let callCount = 0
 
     const kx = createKeryx({
-      agents: [makeAgent('solo', 'Solo Agent')],
       pollingInterval: 10,
       defaultProvider: {
         generate: async (params: any) => {
@@ -97,6 +94,8 @@ describe('agent_ask tool', () => {
       },
     })
 
+    await kx.agents.spawn('solo', makeAgent('Solo Agent'))
+
     kx.start()
     await kx.send({ to: 'solo', body: 'try asking unknown' })
     await wait(200)
@@ -110,7 +109,6 @@ describe('agent_ask tool', () => {
     let callCount = 0
 
     const kx = createKeryx({
-      agents: [makeAgent('narcissist', 'Narcissist')],
       pollingInterval: 10,
       defaultProvider: {
         generate: async (params: any) => {
@@ -131,6 +129,8 @@ describe('agent_ask tool', () => {
       },
     })
 
+    await kx.agents.spawn('narcissist', makeAgent('Narcissist'))
+
     kx.start()
     await kx.send({ to: 'narcissist', body: 'go' })
     await wait(200)
@@ -144,10 +144,6 @@ describe('agent_ask tool', () => {
     let callCount = 0
 
     const kx = createKeryx({
-      agents: [
-        makeAgent('impatient', 'Impatient'),
-        makeAgent('slow', 'Slow Agent'),
-      ],
       pollingInterval: 10,
       defaultProvider: {
         generate: async (params: any) => {
@@ -179,6 +175,9 @@ describe('agent_ask tool', () => {
       },
     })
 
+    await kx.agents.spawn('impatient', makeAgent('Impatient'))
+    await kx.agents.spawn('slow', makeAgent('Slow Agent'))
+
     kx.start()
     await kx.send({ to: 'impatient', body: 'go' })
     await wait(800)
@@ -191,7 +190,6 @@ describe('agent_ask tool', () => {
     let capturedTools: any[] = []
 
     const kx = createKeryx({
-      agents: [makeAgent('test', 'Test')],
       pollingInterval: 10,
       defaultProvider: {
         generate: async (params: any) => {
@@ -200,6 +198,8 @@ describe('agent_ask tool', () => {
         },
       },
     })
+
+    await kx.agents.spawn('test', makeAgent('Test'))
 
     kx.start()
     await kx.send({ to: 'test', body: 'hello' })

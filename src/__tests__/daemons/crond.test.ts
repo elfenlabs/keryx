@@ -9,9 +9,8 @@ import { createKeryx } from '../../keryx.js'
 import { crond } from '../../daemons/crond.js'
 import type { AgentDefinition } from '../../types.js'
 
-function makeAgent(id: string, name: string): AgentDefinition {
+function makeAgent(name: string): AgentDefinition {
   return {
-    id,
     name,
     instruction: `You are ${name}.`,
   }
@@ -26,7 +25,6 @@ describe('crond', () => {
     const receivedBodies: string[] = []
 
     const kx = createKeryx({
-      agents: [makeAgent('reporter', 'Reporter')],
       daemons: [
         crond({
           jobs: [{
@@ -48,6 +46,7 @@ describe('crond', () => {
       },
     })
 
+    await kx.agents.spawn('reporter', makeAgent('Reporter'))
     kx.start()
     // Wait for at least 2 timer fires
     await wait(350)
@@ -62,10 +61,6 @@ describe('crond', () => {
     const received: Map<string, number> = new Map()
 
     const kx = createKeryx({
-      agents: [
-        makeAgent('daily', 'Daily Agent'),
-        makeAgent('hourly', 'Hourly Agent'),
-      ],
       daemons: [
         crond({
           jobs: [
@@ -88,6 +83,8 @@ describe('crond', () => {
       },
     })
 
+    await kx.agents.spawn('daily', makeAgent('Daily Agent'))
+    await kx.agents.spawn('hourly', makeAgent('Hourly Agent'))
     kx.start()
     await wait(450)
 
@@ -104,7 +101,6 @@ describe('crond', () => {
     let callCount = 0
 
     const kx = createKeryx({
-      agents: [makeAgent('ticker', 'Ticker')],
       daemons: [
         crond({
           jobs: [{
@@ -124,6 +120,7 @@ describe('crond', () => {
       },
     })
 
+    await kx.agents.spawn('ticker', makeAgent('Ticker'))
     kx.start()
     await wait(200)
 
@@ -139,7 +136,6 @@ describe('crond', () => {
     let capturedMetadata: Record<string, unknown> | undefined
 
     const kx = createKeryx({
-      agents: [makeAgent('meta-test', 'Meta Test')],
       daemons: [
         crond({
           jobs: [{
@@ -166,6 +162,7 @@ describe('crond', () => {
       },
     })
 
+    await kx.agents.spawn('meta-test', makeAgent('Meta Test'))
     kx.start()
     await wait(200)
 

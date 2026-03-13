@@ -9,6 +9,8 @@ import { createContext, runAgent, AgentAbortError, type Tool, type AgentResult }
 import type { RunStatus } from '@elfenlabs/nous'
 import type {
   AgentDefinition,
+  AgentInstance,
+  KeryxInstance,
   Message,
   ActivationContext,
   AfterActivationContext,
@@ -20,7 +22,12 @@ import { Registry } from './registry.js'
 import { DaemonManager } from './daemon.js'
 import { createSendMessageTool } from './tools/send-message.js'
 import { createAskAgentTool } from './tools/ask-agent.js'
+import { createSpawnAgentTool } from './tools/spawn-agent.js'
+import { createDestroyAgentTool } from './tools/destroy-agent.js'
 import { buildPromptAddendum } from './prompt.js'
+
+/** Internal metadata type for destroy messages */
+const DESTROY_MESSAGE_TYPE = '__destroy__'
 
 export class ProcessManager {
   readonly inbox: Inbox
@@ -35,7 +42,14 @@ export class ProcessManager {
   private pollingTimer: ReturnType<typeof setInterval> | null = null
   private pollingInterval: number
   private defaultProvider: Provider
+  private definitions: Record<string, AgentDefinition>
   private running = false
+
+  /** Lazy reference to the KeryxInstance (set after construction) */
+  private kxRef: KeryxInstance | null = null
+
+  /** Pending destroy promises: keyed by agent id, resolved when destroy completes */
+  private pendingDestroys = new Map<string, { resolve: () => void }>()
 
   // Callback for when inbox state changes (used to wake poller immediately)
   private wakePoller: (() => void) | null = null
@@ -47,6 +61,7 @@ export class ProcessManager {
     pendingReplies: PendingReplyMap
     pollingInterval: number
     defaultProvider: Provider
+    definitions: Record<string, AgentDefinition>
   }) {
     this.inbox = opts.inbox
     this.registry = opts.registry
@@ -54,6 +69,12 @@ export class ProcessManager {
     this.pendingReplies = opts.pendingReplies
     this.pollingInterval = opts.pollingInterval
     this.defaultProvider = opts.defaultProvider
+    this.definitions = opts.definitions
+  }
+
+  /** Set the KeryxInstance reference (called after construction) */
+  setKxRef(kx: KeryxInstance): void {
+    this.kxRef = kx
   }
 
   // ── Observability (for keryxd) ──────────────────────────────────────
@@ -118,6 +139,37 @@ export class ProcessManager {
     this.processAgent(msg.to)
   }
 
+  /**
+   * Enqueue a destroy message for an agent.
+   * Returns a promise that resolves when the agent is fully destroyed.
+   */
+  async enqueueDestroy(agentId: string, opts?: { priority?: number; force?: boolean }): Promise<void> {
+    const priority = opts?.priority ?? 0
+    const force = opts?.force ?? false
+
+    // Create the destroy promise
+    const destroyPromise = new Promise<void>((resolve) => {
+      this.pendingDestroys.set(agentId, { resolve })
+    })
+
+    // Enqueue the destroy message
+    const msg: Message = {
+      id: crypto.randomUUID(),
+      to: agentId,
+      from: 'system',
+      body: `Destroy agent "${agentId}"`,
+      priority,
+      force,
+      metadata: { type: DESTROY_MESSAGE_TYPE },
+      createdAt: new Date(),
+    }
+
+    await this.enqueueAndProcess(msg)
+
+    // Wait for the destroy to complete
+    return destroyPromise
+  }
+
   /** Poll all inboxes for pending messages */
   private poll(): void {
     if (!this.running) return
@@ -142,6 +194,12 @@ export class ProcessManager {
         }
         if (!msg) break
 
+        // Check for destroy message
+        if (msg.metadata?.type === DESTROY_MESSAGE_TYPE) {
+          await this.executeDestroy(agentId)
+          break // Agent is gone, stop processing
+        }
+
         await this.runActivation(agentId, msg)
       }
     })()
@@ -150,6 +208,28 @@ export class ProcessManager {
     lock.finally(() => {
       this.activeLocks.delete(agentId)
     })
+  }
+
+  /** Execute the destroy flow for an agent */
+  private async executeDestroy(agentId: string): Promise<void> {
+    const instance = this.registry.get(agentId)
+    if (!instance) return
+
+    // Flush all remaining messages from inbox
+    this.inbox.flush(agentId)
+
+    // Run onAgentDestroy daemon hooks
+    await this.daemons.runOnAgentDestroy({ agentId, instance })
+
+    // Deregister from the registry
+    this.registry.deregister(agentId)
+
+    // Resolve the pending destroy promise
+    const pending = this.pendingDestroys.get(agentId)
+    if (pending) {
+      this.pendingDestroys.delete(agentId)
+      pending.resolve()
+    }
   }
 
   /** Run a single activation for an agent with a message */
@@ -201,17 +281,34 @@ export class ProcessManager {
       pendingReplies: this.pendingReplies,
     })
 
-    // Merge all tools: send_message + ask_agent + static agent tools + daemon tools
-    const staticTools = agentDef.tools ?? []
-    const allTools = [sendMessageTool, askAgentTool, ...staticTools, ...daemonTools]
+    // Create spawn/destroy tools (only if kx ref is available)
+    const lifecycleTools: Tool<any>[] = []
+    if (this.kxRef) {
+      lifecycleTools.push(createSpawnAgentTool({
+        fromAgentId: agentId,
+        definitions: this.definitions,
+        kx: this.kxRef,
+      }))
+      lifecycleTools.push(createDestroyAgentTool({
+        fromAgentId: agentId,
+        kx: this.kxRef,
+      }))
+    }
 
-    // Build system prompt addendum
+    // Merge all tools: send_message + ask_agent + lifecycle + spawn-time tools + static agent tools + daemon tools
+    const staticTools = agentDef.tools ?? []
+    const spawnTools = agentDef.spawnTools ?? []
+    const allTools = [sendMessageTool, askAgentTool, ...lifecycleTools, ...spawnTools, ...staticTools, ...daemonTools]
+
+    // Build system prompt addendum — include both spawn-time and per-activation prompt segments
+    const allPromptSegments = [...(agentDef.spawnPromptSegments ?? []), ...promptSegments]
+
     const addendum = buildPromptAddendum({
       agentId,
       agentName: agentDef.name,
       registry: this.registry.list(),
       message: msg,
-      daemonSegments: promptSegments,
+      daemonSegments: allPromptSegments,
     })
 
     const fullInstruction = addendum + '\n' + agentDef.instruction

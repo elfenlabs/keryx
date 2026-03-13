@@ -23,6 +23,7 @@ export { shelld } from './daemons/shelld.js'
 export type {
   Message,
   AgentDefinition,
+  AgentInstance,
   DaemonDefinition,
   MessageContext,
   ActivationContext,
@@ -30,10 +31,14 @@ export type {
   AfterToolCallContext,
   AfterActivationContext,
   AgentStreamContext,
+  AgentSpawnContext,
+  AgentDestroyContext,
   KeryxConfig,
   KeryxInstance,
   SendOptions,
   RequestOptions,
+  SpawnOptions,
+  DestroyOptions,
   AgentStatus,
 } from './types.js'
 

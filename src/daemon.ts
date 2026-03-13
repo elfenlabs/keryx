@@ -13,6 +13,8 @@ import type {
   AfterToolCallContext,
   AfterActivationContext,
   AgentStreamContext,
+  AgentSpawnContext,
+  AgentDestroyContext,
 } from './types.js'
 
 export class DaemonManager {
@@ -102,6 +104,22 @@ export class DaemonManager {
       }
     }
   }
+
+  /** Run onAgentSpawn on all daemons in order */
+  async runOnAgentSpawn(ctx: AgentSpawnContext): Promise<void> {
+    for (const daemon of this.daemons) {
+      if (daemon.onAgentSpawn) {
+        await daemon.onAgentSpawn(ctx)
+      }
+    }
+  }
+
+  /** Run onAgentDestroy on all daemons in order */
+  async runOnAgentDestroy(ctx: AgentDestroyContext): Promise<void> {
+    for (const daemon of this.daemons) {
+      if (daemon.onAgentDestroy) {
+        await daemon.onAgentDestroy(ctx)
+      }
+    }
+  }
 }
-
-

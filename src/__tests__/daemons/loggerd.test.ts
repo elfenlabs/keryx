@@ -9,9 +9,8 @@ import { createKeryx } from '../../keryx.js'
 import { loggerd } from '../../daemons/loggerd.js'
 import type { AgentDefinition } from '../../types.js'
 
-function makeAgent(id: string, name: string): AgentDefinition {
+function makeAgent(name: string): AgentDefinition {
   return {
-    id,
     name,
     instruction: `You are ${name}.`,
   }
@@ -26,13 +25,14 @@ describe('loggerd', () => {
     const logs: string[] = []
 
     const kx = createKeryx({
-      agents: [makeAgent('echo', 'Echo Agent')],
       daemons: [loggerd({ log: (...args: unknown[]) => logs.push(args.join(' ')) })],
       pollingInterval: 10,
       defaultProvider: {
         generate: async () => ({ content: 'Hello back!' }),
       },
     })
+
+    await kx.agents.spawn('echo', makeAgent('Echo Agent'))
 
     kx.start()
     await kx.send({ to: 'echo', body: 'Hello world' })
@@ -58,13 +58,14 @@ describe('loggerd', () => {
     const logs: string[] = []
 
     const kx = createKeryx({
-      agents: [makeAgent('fail', 'Fail Agent')],
       daemons: [loggerd({ log: (...args: unknown[]) => logs.push(args.join(' ')) })],
       pollingInterval: 10,
       defaultProvider: {
         generate: async () => { throw new Error('Provider error') },
       },
     })
+
+    await kx.agents.spawn('fail', makeAgent('Fail Agent'))
 
     kx.start()
     await kx.send({ to: 'fail', body: 'crash' })
@@ -81,13 +82,14 @@ describe('loggerd', () => {
     const logs: string[] = []
 
     const kx = createKeryx({
-      agents: [makeAgent('verbose', 'Verbose Agent')],
       daemons: [loggerd({ log: (...args: unknown[]) => logs.push(args.join(' ')) })],
       pollingInterval: 10,
       defaultProvider: {
         generate: async () => ({ content: 'ok' }),
       },
     })
+
+    await kx.agents.spawn('verbose', makeAgent('Verbose Agent'))
 
     kx.start()
     const longBody = 'A'.repeat(200)
@@ -110,15 +112,6 @@ describe('loggerd', () => {
     let callCount = 0
 
     const kx = createKeryx({
-      agents: [{
-        ...makeAgent('worker', 'Worker'),
-        tools: [{
-          id: 'greet',
-          description: 'Says hello',
-          schema: { name: { type: 'string' as const, description: 'Name' } },
-          execute: async (args: { name: string }) => `Hello, ${args.name}!`,
-        }],
-      }],
       daemons: [loggerd({ verbose: true, log: (...args: unknown[]) => logs.push(args.join(' ')) })],
       pollingInterval: 10,
       defaultProvider: {
@@ -132,6 +125,16 @@ describe('loggerd', () => {
           return { content: 'Done greeting.' }
         },
       },
+    })
+
+    await kx.agents.spawn('worker', {
+      ...makeAgent('Worker'),
+      tools: [{
+        id: 'greet',
+        description: 'Says hello',
+        schema: { name: { type: 'string' as const, description: 'Name' } },
+        execute: async (args: { name: string }) => `Hello, ${args.name}!`,
+      }],
     })
 
     kx.start()
@@ -153,13 +156,14 @@ describe('loggerd', () => {
     const logs: string[] = []
 
     const kx = createKeryx({
-      agents: [makeAgent('colortest', 'Color Agent')],
       daemons: [loggerd({ verbose: true, log: (...args: unknown[]) => logs.push(args.join(' ')) })],
       pollingInterval: 10,
       defaultProvider: {
         generate: async () => ({ content: 'Colored response' }),
       },
     })
+
+    await kx.agents.spawn('colortest', makeAgent('Color Agent'))
 
     kx.start()
     await kx.send({ to: 'colortest', body: 'Test colors' })
@@ -176,13 +180,14 @@ describe('loggerd', () => {
     const logs: string[] = []
 
     const kx = createKeryx({
-      agents: [makeAgent('plain', 'Plain Agent')],
       daemons: [loggerd({ log: (...args: unknown[]) => logs.push(args.join(' ')) })],
       pollingInterval: 10,
       defaultProvider: {
         generate: async () => ({ content: 'Plain response' }),
       },
     })
+
+    await kx.agents.spawn('plain', makeAgent('Plain Agent'))
 
     kx.start()
     await kx.send({ to: 'plain', body: 'No colors' })

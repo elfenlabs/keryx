@@ -20,9 +20,8 @@ import { createTool } from '@elfenlabs/nous'
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-function makeAgent(id: string, name: string): AgentDefinition {
+function makeAgent(name: string): AgentDefinition {
   return {
-    id,
     name,
     instruction: `You are ${name}.`,
   }
@@ -185,7 +184,6 @@ describe('secretd daemon', () => {
     const calls: { instruction: string }[] = []
 
     const kx = createKeryx({
-      agents: [makeAgent('analyst', 'Analyst')],
       daemons: [
         secretd({
           storage: new InMemorySecretStorage({ OPENAI_KEY: 'sk-123' }),
@@ -205,6 +203,8 @@ describe('secretd daemon', () => {
       },
     })
 
+    await kx.agents.spawn('analyst', makeAgent('Analyst'))
+
     kx.start()
     await kx.send({ to: 'analyst', body: 'test' })
     await wait(300)
@@ -220,7 +220,6 @@ describe('secretd daemon', () => {
     const calls: { instruction: string }[] = []
 
     const kx = createKeryx({
-      agents: [makeAgent('rogue', 'Rogue')],
       daemons: [
         secretd({
           storage: new InMemorySecretStorage({ OPENAI_KEY: 'sk-123' }),
@@ -238,6 +237,8 @@ describe('secretd daemon', () => {
         },
       },
     })
+
+    await kx.agents.spawn('rogue', makeAgent('Rogue'))
 
     kx.start()
     await kx.send({ to: 'rogue', body: 'test' })
@@ -266,7 +267,6 @@ describe('secretd daemon', () => {
     })
 
     const kx = createKeryx({
-      agents: [{ ...makeAgent('analyst', 'Analyst'), tools: [httpTool] }],
       daemons: [
         secretd({
           storage: new InMemorySecretStorage({ OPENAI_KEY: 'sk-real-value' }),
@@ -293,6 +293,8 @@ describe('secretd daemon', () => {
       },
     })
 
+    await kx.agents.spawn('analyst', { ...makeAgent('Analyst'), tools: [httpTool] })
+
     kx.start()
     await kx.send({ to: 'analyst', body: 'test' })
     await wait(300)
@@ -316,7 +318,6 @@ describe('secretd daemon', () => {
     })
 
     const kx = createKeryx({
-      agents: [{ ...makeAgent('any-agent', 'Any Agent'), tools: [apiTool] }],
       daemons: [
         secretd({
           storage: new InMemorySecretStorage({ TOKEN: 'my-token' }),
@@ -340,6 +341,8 @@ describe('secretd daemon', () => {
       },
     })
 
+    await kx.agents.spawn('any-agent', { ...makeAgent('Any Agent'), tools: [apiTool] })
+
     kx.start()
     await kx.send({ to: 'any-agent', body: 'test' })
     await wait(300)
@@ -348,9 +351,8 @@ describe('secretd daemon', () => {
     expect(capturedArgs['token']).toBe('my-token')
   })
 
-  test('onStart throws if configured secret is missing from storage', () => {
+  test('onStart throws if configured secret is missing from storage', async () => {
     const kx = createKeryx({
-      agents: [makeAgent('test', 'Test')],
       daemons: [
         secretd({
           storage: new InMemorySecretStorage({}),
@@ -362,6 +364,8 @@ describe('secretd daemon', () => {
       pollingInterval: 10,
       defaultProvider: { generate: async () => ({ content: 'ok' }) },
     })
+
+    await kx.agents.spawn('test', makeAgent('Test'))
 
     expect(() => kx.start()).toThrow('Secret "MISSING_KEY" is configured but not found in storage')
   })

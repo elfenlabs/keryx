@@ -101,9 +101,8 @@ function createMockDriver(): MockDriver {
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-function makeAgent(id: string, name: string, config?: Record<string, unknown>): AgentDefinition {
+function makeAgent(name: string, config?: Record<string, unknown>): AgentDefinition {
   return {
-    id,
     name,
     instruction: `You are ${name}.`,
     config,
@@ -123,9 +122,6 @@ describe('shelld', () => {
 
     const shell = shelld({ driver })
     const kx = createKeryx({
-      agents: [
-        makeAgent('coder', 'Coder', { 'shelld': { hosts: ['dev-box'] } }),
-      ],
       daemons: [shell.daemon],
       pollingInterval: 10,
       defaultProvider: {
@@ -135,6 +131,8 @@ describe('shelld', () => {
         },
       },
     })
+
+    await kx.agents.spawn('coder', makeAgent('Coder', { 'shelld': { hosts: ['dev-box'] } }))
 
     kx.start()
     await kx.send({ to: 'coder', body: 'go' })
@@ -153,9 +151,6 @@ describe('shelld', () => {
 
     const shell = shelld({ driver })
     const kx = createKeryx({
-      agents: [
-        makeAgent('plain', 'Plain Agent'),
-      ],
       daemons: [shell.daemon],
       pollingInterval: 10,
       defaultProvider: {
@@ -165,6 +160,8 @@ describe('shelld', () => {
         },
       },
     })
+
+    await kx.agents.spawn('plain', makeAgent('Plain Agent'))
 
     kx.start()
     await kx.send({ to: 'plain', body: 'go' })
@@ -185,9 +182,6 @@ describe('shelld', () => {
 
     const shell = shelld({ driver })
     const kx = createKeryx({
-      agents: [
-        makeAgent('coder', 'Coder', { 'shelld': { hosts: ['dev-box'] } }),
-      ],
       daemons: [shell.daemon],
       pollingInterval: 10,
       defaultProvider: {
@@ -212,6 +206,8 @@ describe('shelld', () => {
         },
       },
     })
+
+    await kx.agents.spawn('coder', makeAgent('Coder', { 'shelld': { hosts: ['dev-box'] } }))
 
     kx.start()
     await kx.send({ to: 'coder', body: 'run echo' })
@@ -239,9 +235,6 @@ describe('shelld', () => {
 
     const shell = shelld({ driver, headChars: 100, tailChars: 100 })
     const kx = createKeryx({
-      agents: [
-        makeAgent('coder', 'Coder', { 'shelld': { hosts: ['dev-box'] } }),
-      ],
       daemons: [shell.daemon],
       pollingInterval: 10,
       defaultProvider: {
@@ -267,6 +260,8 @@ describe('shelld', () => {
       },
     })
 
+    await kx.agents.spawn('coder', makeAgent('Coder', { 'shelld': { hosts: ['dev-box'] } }))
+
     kx.start()
     await kx.send({ to: 'coder', body: 'cat' })
     await wait(300)
@@ -288,9 +283,6 @@ describe('shelld', () => {
 
     const shell = shelld({ driver })
     const kx = createKeryx({
-      agents: [
-        makeAgent('coder', 'Coder', { 'shelld': { hosts: ['dev-box'] } }),
-      ],
       daemons: [shell.daemon],
       pollingInterval: 10,
       defaultProvider: {
@@ -316,6 +308,8 @@ describe('shelld', () => {
       },
     })
 
+    await kx.agents.spawn('coder', makeAgent('Coder', { 'shelld': { hosts: ['dev-box'] } }))
+
     kx.start()
     await kx.send({ to: 'coder', body: 'start server' })
     await wait(500)
@@ -338,9 +332,6 @@ describe('shelld', () => {
 
     const shell = shelld({ driver })
     const kx = createKeryx({
-      agents: [
-        makeAgent('coder', 'Coder', { 'shelld': { hosts: ['dev-box'] } }),
-      ],
       daemons: [shell.daemon],
       pollingInterval: 10,
       defaultProvider: {
@@ -379,6 +370,8 @@ describe('shelld', () => {
       },
     })
 
+    await kx.agents.spawn('coder', makeAgent('Coder', { 'shelld': { hosts: ['dev-box'] } }))
+
     kx.start()
     await kx.send({ to: 'coder', body: 'paginate' })
     await wait(500)
@@ -401,9 +394,6 @@ describe('shelld', () => {
 
     const shell = shelld({ driver })
     const kx = createKeryx({
-      agents: [
-        makeAgent('coder', 'Coder', { 'shelld': { hosts: ['dev-box'] } }),
-      ],
       daemons: [shell.daemon],
       pollingInterval: 10,
       defaultProvider: {
@@ -441,6 +431,8 @@ describe('shelld', () => {
       },
     })
 
+    await kx.agents.spawn('coder', makeAgent('Coder', { 'shelld': { hosts: ['dev-box'] } }))
+
     kx.start()
     await kx.send({ to: 'coder', body: 'interactive' })
     await wait(500)
@@ -460,9 +452,6 @@ describe('shelld', () => {
 
     const shell = shelld({ driver })
     const kx = createKeryx({
-      agents: [
-        makeAgent('coder', 'Coder', { 'shelld': { hosts: ['dev-box'] } }),
-      ],
       daemons: [shell.daemon],
       pollingInterval: 10,
       defaultProvider: {
@@ -488,6 +477,8 @@ describe('shelld', () => {
       },
     })
 
+    await kx.agents.spawn('coder', makeAgent('Coder', { 'shelld': { hosts: ['dev-box'] } }))
+
     kx.start()
     await kx.send({ to: 'coder', body: 'hack' })
     await wait(300)
@@ -507,10 +498,6 @@ describe('shelld', () => {
 
     const shell = shelld({ driver })
     const kx = createKeryx({
-      agents: [
-        makeAgent('admin', 'Admin', { 'shelld': { hosts: ['secure-box'] } }),
-        makeAgent('spy', 'Spy', { 'shelld': { hosts: ['public-box'] } }),
-      ],
       daemons: [shell.daemon],
       pollingInterval: 10,
       defaultProvider: {
@@ -553,6 +540,9 @@ describe('shelld', () => {
       },
     })
 
+    await kx.agents.spawn('admin', makeAgent('Admin', { 'shelld': { hosts: ['secure-box'] } }))
+    await kx.agents.spawn('spy', makeAgent('Spy', { 'shelld': { hosts: ['public-box'] } }))
+
     kx.start()
     // Admin creates a session
     await kx.send({ to: 'admin', body: 'read secrets' })
@@ -575,10 +565,6 @@ describe('shelld', () => {
 
     const shell = shelld({ driver })
     const kx = createKeryx({
-      agents: [
-        makeAgent('dev-a', 'Dev A', { 'shelld': { hosts: ['shared-box'] } }),
-        makeAgent('dev-b', 'Dev B', { 'shelld': { hosts: ['shared-box'] } }),
-      ],
       daemons: [shell.daemon],
       pollingInterval: 10,
       defaultProvider: {
@@ -621,6 +607,9 @@ describe('shelld', () => {
       },
     })
 
+    await kx.agents.spawn('dev-a', makeAgent('Dev A', { 'shelld': { hosts: ['shared-box'] } }))
+    await kx.agents.spawn('dev-b', makeAgent('Dev B', { 'shelld': { hosts: ['shared-box'] } }))
+
     kx.start()
     await kx.send({ to: 'dev-a', body: 'start shared task' })
     await wait(300)
@@ -640,9 +629,6 @@ describe('shelld', () => {
 
     const shell = shelld({ driver })
     const kx = createKeryx({
-      agents: [
-        makeAgent('coder', 'Coder', { 'shelld': { hosts: ['dev-box'] } }),
-      ],
       daemons: [shell.daemon],
       pollingInterval: 10,
       defaultProvider: {
@@ -665,6 +651,8 @@ describe('shelld', () => {
         },
       },
     })
+
+    await kx.agents.spawn('coder', makeAgent('Coder', { 'shelld': { hosts: ['dev-box'] } }))
 
     kx.start()
     await kx.send({ to: 'coder', body: 'start server' })

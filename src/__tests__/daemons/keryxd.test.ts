@@ -9,9 +9,8 @@ import { createKeryx } from '../../keryx.js'
 import { keryxd } from '../../daemons/keryxd.js'
 import type { AgentDefinition } from '../../types.js'
 
-function makeAgent(id: string, name: string, config?: Record<string, unknown>): AgentDefinition {
+function makeAgent(name: string, config?: Record<string, unknown>): AgentDefinition {
   return {
-    id,
     name,
     instruction: `You are ${name}.`,
     config,
@@ -27,10 +26,6 @@ describe('keryxd', () => {
     let capturedTools: any[] = []
 
     const kx = createKeryx({
-      agents: [
-        makeAgent('manager', 'Manager', { 'keryxd': { read: ['*'] } }),
-        makeAgent('worker', 'Worker'),
-      ],
       daemons: [keryxd()],
       pollingInterval: 10,
       defaultProvider: {
@@ -40,6 +35,9 @@ describe('keryxd', () => {
         },
       },
     })
+
+    await kx.agents.spawn('manager', makeAgent('Manager', { 'keryxd': { read: ['*'] } }))
+    await kx.agents.spawn('worker', makeAgent('Worker'))
 
     kx.start()
     await kx.send({ to: 'manager', body: 'list agents' })
@@ -55,10 +53,6 @@ describe('keryxd', () => {
     let capturedTools: any[] = []
 
     const kx = createKeryx({
-      agents: [
-        makeAgent('assistant', 'Assistant', { 'keryxd': { read: ['*'] } }),
-        makeAgent('analyst', 'Analyst'),
-      ],
       daemons: [keryxd()],
       pollingInterval: 10,
       defaultProvider: {
@@ -68,6 +62,9 @@ describe('keryxd', () => {
         },
       },
     })
+
+    await kx.agents.spawn('assistant', makeAgent('Assistant', { 'keryxd': { read: ['*'] } }))
+    await kx.agents.spawn('analyst', makeAgent('Analyst'))
 
     kx.start()
     await kx.send({ to: 'assistant', body: 'check' })
@@ -83,9 +80,6 @@ describe('keryxd', () => {
     let capturedTools: any[] = []
 
     const kx = createKeryx({
-      agents: [
-        makeAgent('admin', 'Admin', { 'keryxd': { write: ['*'] } }),
-      ],
       daemons: [keryxd()],
       pollingInterval: 10,
       defaultProvider: {
@@ -95,6 +89,8 @@ describe('keryxd', () => {
         },
       },
     })
+
+    await kx.agents.spawn('admin', makeAgent('Admin', { 'keryxd': { write: ['*'] } }))
 
     kx.start()
     await kx.send({ to: 'admin', body: 'go' })
@@ -110,9 +106,6 @@ describe('keryxd', () => {
     let capturedTools: any[] = []
 
     const kx = createKeryx({
-      agents: [
-        makeAgent('plain', 'Plain Agent'),
-      ],
       daemons: [keryxd()],
       pollingInterval: 10,
       defaultProvider: {
@@ -122,6 +115,8 @@ describe('keryxd', () => {
         },
       },
     })
+
+    await kx.agents.spawn('plain', makeAgent('Plain Agent'))
 
     kx.start()
     await kx.send({ to: 'plain', body: 'go' })
@@ -139,11 +134,6 @@ describe('keryxd', () => {
     let callCount = 0
 
     const kx = createKeryx({
-      agents: [
-        makeAgent('admin', 'Admin', { 'keryxd': { write: ['news-*'] } }),
-        makeAgent('news-agent', 'News'),
-        makeAgent('analyst', 'Analyst'),
-      ],
       daemons: [keryxd()],
       pollingInterval: 10,
       defaultProvider: {
@@ -184,6 +174,10 @@ describe('keryxd', () => {
       },
     })
 
+    await kx.agents.spawn('admin', makeAgent('Admin', { 'keryxd': { write: ['news-*'] } }))
+    await kx.agents.spawn('news-agent', makeAgent('News'))
+    await kx.agents.spawn('analyst', makeAgent('Analyst'))
+
     kx.start()
     await kx.send({ to: 'admin', body: 'test' })
     await wait(500)
@@ -199,10 +193,6 @@ describe('keryxd', () => {
     let callCount = 0
 
     const kx = createKeryx({
-      agents: [
-        makeAgent('monitor', 'Monitor', { 'keryxd': { read: ['*'] } }),
-        makeAgent('worker', 'Worker'),
-      ],
       daemons: [keryxd()],
       pollingInterval: 10,
       defaultProvider: {
@@ -229,6 +219,9 @@ describe('keryxd', () => {
       },
     })
 
+    await kx.agents.spawn('monitor', makeAgent('Monitor', { 'keryxd': { read: ['*'] } }))
+    await kx.agents.spawn('worker', makeAgent('Worker'))
+
     // Pre-seed worker inbox with messages
     kx.start()
 
@@ -249,11 +242,6 @@ describe('keryxd', () => {
     let callCount = 0
 
     const kx = createKeryx({
-      agents: [
-        makeAgent('limited', 'Limited', { 'keryxd': { read: ['worker'] } }),
-        makeAgent('worker', 'Worker'),
-        makeAgent('secret', 'Secret Agent'),
-      ],
       daemons: [keryxd()],
       pollingInterval: 10,
       defaultProvider: {
@@ -278,6 +266,10 @@ describe('keryxd', () => {
         },
       },
     })
+
+    await kx.agents.spawn('limited', makeAgent('Limited', { 'keryxd': { read: ['worker'] } }))
+    await kx.agents.spawn('worker', makeAgent('Worker'))
+    await kx.agents.spawn('secret', makeAgent('Secret Agent'))
 
     kx.start()
     await kx.send({ to: 'limited', body: 'check secret' })

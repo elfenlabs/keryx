@@ -38,17 +38,43 @@ export type Message = {
   discardedAt?: Date
 }
 
-// ── Agent Definition ────────────────────────────────────────────────────────
+// ── Agent Definition & Instance ─────────────────────────────────────────────
 
-/** Static agent registration */
+/** Static agent template — the reusable blueprint (no id) */
 export type AgentDefinition = {
-  id: string
   name: string
   instruction: string
   /** Per-agent provider override. Falls back to KeryxConfig.defaultProvider. */
   provider?: Provider
   tools?: Tool<any>[]
   config?: Record<string, Record<string, unknown>>
+}
+
+/** A running agent instance — definition bound to a unique id */
+export type AgentInstance = AgentDefinition & {
+  id: string
+  /** Tools injected by daemons at spawn time */
+  spawnTools: Tool<any>[]
+  /** Prompt segments injected by daemons at spawn time */
+  spawnPromptSegments: string[]
+}
+
+// ── Spawn & Destroy Options ─────────────────────────────────────────────────
+
+/** Options for spawning an agent instance */
+export type SpawnOptions = {
+  /** Per-instance provider override */
+  provider?: Provider
+  /** Per-instance config overrides (merged with definition config) */
+  config?: Record<string, Record<string, unknown>>
+}
+
+/** Options for destroying an agent instance */
+export type DestroyOptions = {
+  /** Message priority for the destroy message (default: 0) */
+  priority?: number
+  /** Force-interrupt active processing (default: false) */
+  force?: boolean
 }
 
 // ── Daemon Definition ───────────────────────────────────────────────────────
@@ -107,6 +133,20 @@ export type AgentStreamContext = {
   toolName?: string
 }
 
+/** Context passed to onAgentSpawn hooks */
+export type AgentSpawnContext = {
+  agentId: string
+  instance: AgentInstance
+  addTools: (tools: Tool<any>[]) => void
+  addPromptSegment: (segment: string) => void
+}
+
+/** Context passed to onAgentDestroy hooks */
+export type AgentDestroyContext = {
+  agentId: string
+  instance: AgentInstance
+}
+
 /** A daemon (middleware service) registered with Keryx */
 export type DaemonDefinition = {
   id: string
@@ -120,14 +160,19 @@ export type DaemonDefinition = {
   onAfterActivation?: (ctx: AfterActivationContext) => void | Promise<void>
   /** Synchronous streaming hook — must not block token flow */
   onAgentStream?: (ctx: AgentStreamContext) => void
+  /** Called when an agent instance is spawned */
+  onAgentSpawn?: (ctx: AgentSpawnContext) => void | Promise<void>
+  /** Called when an agent instance is destroyed */
+  onAgentDestroy?: (ctx: AgentDestroyContext) => void | Promise<void>
 }
 
 // ── Keryx Configuration ─────────────────────────────────────────────────────
 
 /** Configuration for createKeryx() */
 export type KeryxConfig = {
-  agents: AgentDefinition[]
   daemons?: DaemonDefinition[]
+  /** Named catalog of agent definitions for agent_spawn tool */
+  definitions?: Record<string, AgentDefinition>
   /** Inbox polling interval in ms. Default: 100 */
   pollingInterval?: number
   /** Default Nous provider used by all agents unless overridden. */
@@ -165,13 +210,14 @@ export type KeryxInstance = {
     deregister: (id: string) => void
     list: () => { id: string; order: number }[]
   }
-  /** Agent observability and management (used by keryxd) */
+  /** Agent lifecycle and observability */
   agents: {
+    spawn: (id: string, definition: AgentDefinition, opts?: SpawnOptions) => Promise<AgentInstance>
+    destroy: (id: string, opts?: DestroyOptions) => Promise<void>
     list: () => AgentStatus[]
     getStatus: (id: string) => AgentStatus | undefined
     getInbox: (id: string) => Message[]
     flushInbox: (id: string) => number
-    abort: (id: string) => boolean
   }
 }
 

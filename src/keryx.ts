@@ -6,13 +6,18 @@
  */
 
 import type {
+  AgentDefinition,
+  AgentInstance,
   KeryxConfig,
   KeryxInstance,
   SendOptions,
   RequestOptions,
+  SpawnOptions,
+  DestroyOptions,
   DaemonDefinition,
   PendingReplyMap,
 } from './types.js'
+import type { Tool } from '@elfenlabs/nous'
 import { Inbox } from './inbox.js'
 import { Registry } from './registry.js'
 import { DaemonManager } from './daemon.js'
@@ -24,14 +29,15 @@ import { ProcessManager } from './process-manager.js'
  * @example
  * ```ts
  * const kx = createKeryx({
- *   createProvider: (config) => createOpenAIProvider({ url: config.url, model: config.model }),
- *   agents: [
- *     { id: 'manager', name: 'Manager', instruction: '...', provider: { url: '...', model: '...' } },
- *   ],
+ *   defaultProvider: myProvider,
+ *   definitions: {
+ *     analyst: { name: 'Analyst', instruction: '...' },
+ *   },
  *   daemons: [loggerd()],
  * })
  *
- * await kx.send({ to: 'manager', body: 'Hello!' })
+ * const agent = await kx.agents.spawn('analyst-1', definitions.analyst)
+ * await kx.send({ to: 'analyst-1', body: 'Hello!' })
  * kx.start()
  * ```
  */
@@ -41,11 +47,7 @@ export function createKeryx(config: KeryxConfig): KeryxInstance {
   const daemonManager = new DaemonManager(config.daemons)
   const pendingReplies: PendingReplyMap = new Map()
   const pollingInterval = config.pollingInterval ?? 100
-
-  // Register all agents
-  for (const agent of config.agents) {
-    registry.register(agent)
-  }
+  const definitions = config.definitions ?? {}
 
   // Create the process manager
   const pm = new ProcessManager({
@@ -55,6 +57,7 @@ export function createKeryx(config: KeryxConfig): KeryxInstance {
     pendingReplies,
     pollingInterval,
     defaultProvider: config.defaultProvider,
+    definitions,
   })
 
   // ── Public API ──────────────────────────────────────────────────────────
@@ -161,8 +164,64 @@ export function createKeryx(config: KeryxConfig): KeryxInstance {
       },
     },
 
-    /** Agent observability and management */
+    /** Agent lifecycle and observability */
     agents: {
+      async spawn(id: string, definition: AgentDefinition, opts?: SpawnOptions): Promise<AgentInstance> {
+        if (registry.has(id)) {
+          throw new Error(`Agent "${id}" is already registered`)
+        }
+
+        // Build the instance
+        const agentInstance: AgentInstance = {
+          ...definition,
+          id,
+          // Apply per-instance overrides
+          provider: opts?.provider ?? definition.provider,
+          config: opts?.config
+            ? { ...definition.config, ...opts.config }
+            : definition.config,
+          spawnTools: [],
+          spawnPromptSegments: [],
+        }
+
+        // Collect spawn-time tools and prompt segments via daemon hooks
+        const spawnTools: Tool<any>[] = []
+        const spawnPromptSegments: string[] = []
+
+        await daemonManager.runOnAgentSpawn({
+          agentId: id,
+          instance: agentInstance,
+          addTools: (tools: Tool<any>[]) => {
+            for (const t of tools) {
+              spawnTools.push(t)
+            }
+          },
+          addPromptSegment: (segment: string) => {
+            spawnPromptSegments.push(segment)
+          },
+        })
+
+        // Store injected tools and segments on the instance
+        agentInstance.spawnTools = spawnTools
+        agentInstance.spawnPromptSegments = spawnPromptSegments
+
+        // Register in the registry
+        registry.register(agentInstance)
+
+        return agentInstance
+      },
+
+      async destroy(id: string, opts?: DestroyOptions): Promise<void> {
+        if (!registry.has(id)) {
+          throw new Error(`Unknown agent: "${id}"`)
+        }
+
+        await pm.enqueueDestroy(id, {
+          priority: opts?.priority ?? 0,
+          force: opts?.force ?? false,
+        })
+      },
+
       list() {
         return registry.list().map(({ id, name }) => {
           const busy = pm.isAgentBusy(id)
@@ -208,15 +267,11 @@ export function createKeryx(config: KeryxConfig): KeryxInstance {
       flushInbox(id: string) {
         return inbox.flush(id)
       },
-
-      abort(id: string) {
-        const controller = pm.abortControllers.get(id)
-        if (!controller) return false
-        controller.abort()
-        return true
-      },
     },
   }
+
+  // Wire the lazy kx reference for spawn/destroy tools
+  pm.setKxRef(instance)
 
   return instance
 }

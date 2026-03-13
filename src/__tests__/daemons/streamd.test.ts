@@ -10,9 +10,8 @@ import { streamd } from '../../daemons/streamd.js'
 import type { StreamEvent } from '../../daemons/streamd.js'
 import type { AgentDefinition } from '../../types.js'
 
-function makeAgent(id: string, name: string): AgentDefinition {
+function makeAgent(name: string): AgentDefinition {
   return {
-    id,
     name,
     instruction: `You are ${name}.`,
   }
@@ -28,7 +27,6 @@ describe('streamd', () => {
     const stream = streamd()
 
     const kx = createKeryx({
-      agents: [makeAgent('writer', 'Writer Agent')],
       daemons: [stream.daemon],
       pollingInterval: 10,
       defaultProvider: {
@@ -43,6 +41,8 @@ describe('streamd', () => {
         },
       },
     })
+
+    await kx.agents.spawn('writer', makeAgent('Writer Agent'))
 
     stream.subscribe((event) => {
       events.push(event)
@@ -71,7 +71,6 @@ describe('streamd', () => {
     const stream = streamd()
 
     const kx = createKeryx({
-      agents: [makeAgent('echo', 'Echo Agent')],
       daemons: [stream.daemon],
       pollingInterval: 10,
       defaultProvider: {
@@ -81,6 +80,8 @@ describe('streamd', () => {
         },
       },
     })
+
+    await kx.agents.spawn('echo', makeAgent('Echo Agent'))
 
     stream.subscribe((e) => events1.push(e))
     stream.subscribe((e) => events2.push(e))
@@ -109,7 +110,6 @@ describe('streamd', () => {
     const stream = streamd()
 
     const kx = createKeryx({
-      agents: [makeAgent('echo', 'Echo Agent')],
       daemons: [stream.daemon],
       pollingInterval: 10,
       defaultProvider: {
@@ -119,6 +119,8 @@ describe('streamd', () => {
         },
       },
     })
+
+    await kx.agents.spawn('echo', makeAgent('Echo Agent'))
 
     const unsub = stream.subscribe((e) => events.push(e))
 
@@ -146,10 +148,6 @@ describe('streamd', () => {
     const stream = streamd()
 
     const kx = createKeryx({
-      agents: [
-        makeAgent('agent-a', 'Agent A'),
-        makeAgent('agent-b', 'Agent B'),
-      ],
       daemons: [stream.daemon],
       pollingInterval: 10,
       defaultProvider: {
@@ -159,6 +157,9 @@ describe('streamd', () => {
         },
       },
     })
+
+    await kx.agents.spawn('agent-a', makeAgent('Agent A'))
+    await kx.agents.spawn('agent-b', makeAgent('Agent B'))
 
     stream.subscribe((e) => events.push(e))
 
@@ -182,7 +183,6 @@ describe('streamd', () => {
     let callCount = 0
 
     const kx = createKeryx({
-      agents: [makeAgent('coder', 'Coder Agent')],
       daemons: [stream.daemon],
       pollingInterval: 10,
       defaultProvider: {
@@ -205,6 +205,8 @@ describe('streamd', () => {
         },
       },
     })
+
+    await kx.agents.spawn('coder', makeAgent('Coder Agent'))
 
     stream.subscribe((e) => events.push(e))
 
