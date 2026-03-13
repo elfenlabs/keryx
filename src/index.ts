@@ -17,6 +17,7 @@ export { keryxd } from './daemons/keryxd.js'
 export { artifactd } from './daemons/artifactd.js'
 export { secretd } from './daemons/secretd.js'
 export { streamd } from './daemons/streamd.js'
+export { shelld } from './daemons/shelld.js'
 
 // Types
 export type {
@@ -43,3 +44,4 @@ export type { KeryxdConfig } from './daemons/keryxd.js'
 export type { ArtifactdOptions, ArtifactStorage, ArtifactMeta, ArtifactInfo } from './daemons/artifactd.js'
 export type { SecretdOptions, SecretConfig, SecretStorage } from './daemons/secretd.js'
 export type { StreamEvent, StreamSubscriber, StreamdHandle } from './daemons/streamd.js'
+export type { ShelldOptions, ShelldConfig, ShellDriver, ShellProcess, ShelldHandle, ShellSession } from './daemons/shelld.js'
