@@ -33,18 +33,18 @@ import { ProcessManager } from './process-manager.js'
  *   definitions: {
  *     analyst: { name: 'Analyst', instruction: '...' },
  *   },
- *   daemons: [loggerd()],
  * })
  *
+ * await kx.daemons.register(loggerd())
  * const agent = await kx.agents.spawn('analyst-1', definitions.analyst)
- * await kx.send({ to: 'analyst-1', body: 'Hello!' })
  * kx.start()
+ * await kx.send({ to: 'analyst-1', body: 'Hello!' })
  * ```
  */
 export function createKeryx(config: KeryxConfig): KeryxInstance {
   const inbox = new Inbox()
   const registry = new Registry()
-  const daemonManager = new DaemonManager(config.daemons)
+  const daemonManager = new DaemonManager()
   const pendingReplies: PendingReplyMap = new Map()
   const pollingInterval = config.pollingInterval ?? 100
   const definitions = config.definitions ?? {}
@@ -131,12 +131,8 @@ export function createKeryx(config: KeryxConfig): KeryxInstance {
       })
     },
 
-    /** Start polling inboxes and daemon background processes */
+    /** Start the inbox poller */
     start(): void {
-      // Start daemon background processes (in order)
-      for (const d of daemonManager.listDefinitions()) {
-        if (d.onStart) d.onStart(instance)
-      }
       pm.start()
     },
 
@@ -151,13 +147,16 @@ export function createKeryx(config: KeryxConfig): KeryxInstance {
       await pm.stop()
     },
 
-    /** Runtime daemon management */
     daemons: {
-      register(daemon: DaemonDefinition): void {
-        daemonManager.register(daemon)
+      async register(daemon: DaemonDefinition): Promise<void> {
+        const replaced = daemonManager.register(daemon)
+        // Hot-reload: stop old, start new
+        if (replaced?.onStop) await replaced.onStop()
+        if (daemon.onStart) await daemon.onStart(instance)
       },
-      deregister(id: string): void {
-        daemonManager.deregister(id)
+      async deregister(id: string): Promise<void> {
+        const removed = daemonManager.deregister(id)
+        if (removed?.onStop) await removed.onStop()
       },
       list(): { id: string; order: number }[] {
         return daemonManager.list()

@@ -24,13 +24,13 @@ describe('loggerd', () => {
   test('logs message arrival and response', async () => {
     const logs: string[] = []
 
-    const kx = createKeryx({
-      daemons: [loggerd({ log: (...args: unknown[]) => logs.push(args.join(' ')) })],
-      pollingInterval: 10,
+    const kx = createKeryx({      pollingInterval: 10,
       defaultProvider: {
         generate: async () => ({ content: 'Hello back!' }),
       },
     })
+
+    await kx.daemons.register(loggerd({ log: (...args: unknown[]) => logs.push(args.join(' ')) }))
 
     await kx.agents.spawn('echo', makeAgent('Echo Agent'))
 
@@ -57,13 +57,13 @@ describe('loggerd', () => {
   test('logs errors on agent failure', async () => {
     const logs: string[] = []
 
-    const kx = createKeryx({
-      daemons: [loggerd({ log: (...args: unknown[]) => logs.push(args.join(' ')) })],
-      pollingInterval: 10,
+    const kx = createKeryx({      pollingInterval: 10,
       defaultProvider: {
         generate: async () => { throw new Error('Provider error') },
       },
     })
+
+    await kx.daemons.register(loggerd({ log: (...args: unknown[]) => logs.push(args.join(' ')) }))
 
     await kx.agents.spawn('fail', makeAgent('Fail Agent'))
 
@@ -81,13 +81,13 @@ describe('loggerd', () => {
   test('truncates long messages in logs', async () => {
     const logs: string[] = []
 
-    const kx = createKeryx({
-      daemons: [loggerd({ log: (...args: unknown[]) => logs.push(args.join(' ')) })],
-      pollingInterval: 10,
+    const kx = createKeryx({      pollingInterval: 10,
       defaultProvider: {
         generate: async () => ({ content: 'ok' }),
       },
     })
+
+    await kx.daemons.register(loggerd({ log: (...args: unknown[]) => logs.push(args.join(' ')) }))
 
     await kx.agents.spawn('verbose', makeAgent('Verbose Agent'))
 
@@ -111,9 +111,7 @@ describe('loggerd', () => {
     const logs: string[] = []
     let callCount = 0
 
-    const kx = createKeryx({
-      daemons: [loggerd({ verbose: true, log: (...args: unknown[]) => logs.push(args.join(' ')) })],
-      pollingInterval: 10,
+    const kx = createKeryx({      pollingInterval: 10,
       defaultProvider: {
         generate: async () => {
           callCount++
@@ -126,6 +124,8 @@ describe('loggerd', () => {
         },
       },
     })
+
+    await kx.daemons.register(loggerd({ verbose: true, log: (...args: unknown[]) => logs.push(args.join(' ')) }))
 
     await kx.agents.spawn('worker', {
       ...makeAgent('Worker'),
@@ -155,13 +155,13 @@ describe('loggerd', () => {
   test('verbose: output contains ANSI color codes', async () => {
     const logs: string[] = []
 
-    const kx = createKeryx({
-      daemons: [loggerd({ verbose: true, log: (...args: unknown[]) => logs.push(args.join(' ')) })],
-      pollingInterval: 10,
+    const kx = createKeryx({      pollingInterval: 10,
       defaultProvider: {
         generate: async () => ({ content: 'Colored response' }),
       },
     })
+
+    await kx.daemons.register(loggerd({ verbose: true, log: (...args: unknown[]) => logs.push(args.join(' ')) }))
 
     await kx.agents.spawn('colortest', makeAgent('Color Agent'))
 
@@ -179,13 +179,13 @@ describe('loggerd', () => {
   test('verbose: non-verbose mode produces no ANSI codes', async () => {
     const logs: string[] = []
 
-    const kx = createKeryx({
-      daemons: [loggerd({ log: (...args: unknown[]) => logs.push(args.join(' ')) })],
-      pollingInterval: 10,
+    const kx = createKeryx({      pollingInterval: 10,
       defaultProvider: {
         generate: async () => ({ content: 'Plain response' }),
       },
     })
+
+    await kx.daemons.register(loggerd({ log: (...args: unknown[]) => logs.push(args.join(' ')) }))
 
     await kx.agents.spawn('plain', makeAgent('Plain Agent'))
 

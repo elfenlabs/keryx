@@ -184,24 +184,22 @@ describe('secretd daemon', () => {
     const calls: { instruction: string }[] = []
 
     const kx = createKeryx({
-      daemons: [
-        secretd({
-          storage: new InMemorySecretStorage({ OPENAI_KEY: 'sk-123' }),
-          secrets: {
-            OPENAI_KEY: { grants: ['analyst'], allowedTools: ['http_request'] },
-          },
-        }),
-      ],
       pollingInterval: 10,
       defaultProvider: {
         generate: async ({ messages }) => {
-          // Capture the system instruction to verify prompt injection
           const system = messages?.find((m: any) => m.role === 'system')
           if (system) calls.push({ instruction: String(system.content) })
           return { content: 'done' }
         },
       },
     })
+
+    await kx.daemons.register(secretd({
+      storage: new InMemorySecretStorage({ OPENAI_KEY: 'sk-123' }),
+      secrets: {
+        OPENAI_KEY: { grants: ['analyst'], allowedTools: ['http_request'] },
+      },
+    }))
 
     await kx.agents.spawn('analyst', makeAgent('Analyst'))
 
@@ -220,14 +218,6 @@ describe('secretd daemon', () => {
     const calls: { instruction: string }[] = []
 
     const kx = createKeryx({
-      daemons: [
-        secretd({
-          storage: new InMemorySecretStorage({ OPENAI_KEY: 'sk-123' }),
-          secrets: {
-            OPENAI_KEY: { grants: ['analyst'], allowedTools: ['http_request'] },
-          },
-        }),
-      ],
       pollingInterval: 10,
       defaultProvider: {
         generate: async ({ messages }) => {
@@ -237,6 +227,13 @@ describe('secretd daemon', () => {
         },
       },
     })
+
+    await kx.daemons.register(secretd({
+      storage: new InMemorySecretStorage({ OPENAI_KEY: 'sk-123' }),
+      secrets: {
+        OPENAI_KEY: { grants: ['analyst'], allowedTools: ['http_request'] },
+      },
+    }))
 
     await kx.agents.spawn('rogue', makeAgent('Rogue'))
 
@@ -267,14 +264,6 @@ describe('secretd daemon', () => {
     })
 
     const kx = createKeryx({
-      daemons: [
-        secretd({
-          storage: new InMemorySecretStorage({ OPENAI_KEY: 'sk-real-value' }),
-          secrets: {
-            OPENAI_KEY: { grants: ['analyst'], allowedTools: ['http_request'] },
-          },
-        }),
-      ],
       pollingInterval: 10,
       defaultProvider: {
         generate: async () => ({
@@ -292,6 +281,13 @@ describe('secretd daemon', () => {
         }),
       },
     })
+
+    await kx.daemons.register(secretd({
+      storage: new InMemorySecretStorage({ OPENAI_KEY: 'sk-real-value' }),
+      secrets: {
+        OPENAI_KEY: { grants: ['analyst'], allowedTools: ['http_request'] },
+      },
+    }))
 
     await kx.agents.spawn('analyst', { ...makeAgent('Analyst'), tools: [httpTool] })
 
@@ -318,14 +314,6 @@ describe('secretd daemon', () => {
     })
 
     const kx = createKeryx({
-      daemons: [
-        secretd({
-          storage: new InMemorySecretStorage({ TOKEN: 'my-token' }),
-          secrets: {
-            TOKEN: { grants: ['*'], allowedTools: ['api_call'] },
-          },
-        }),
-      ],
       pollingInterval: 10,
       defaultProvider: {
         generate: async () => ({
@@ -341,6 +329,13 @@ describe('secretd daemon', () => {
       },
     })
 
+    await kx.daemons.register(secretd({
+      storage: new InMemorySecretStorage({ TOKEN: 'my-token' }),
+      secrets: {
+        TOKEN: { grants: ['*'], allowedTools: ['api_call'] },
+      },
+    }))
+
     await kx.agents.spawn('any-agent', { ...makeAgent('Any Agent'), tools: [apiTool] })
 
     kx.start()
@@ -353,20 +348,16 @@ describe('secretd daemon', () => {
 
   test('onStart throws if configured secret is missing from storage', async () => {
     const kx = createKeryx({
-      daemons: [
-        secretd({
-          storage: new InMemorySecretStorage({}),
-          secrets: {
-            MISSING_KEY: { grants: ['test'], allowedTools: ['http'] },
-          },
-        }),
-      ],
       pollingInterval: 10,
       defaultProvider: { generate: async () => ({ content: 'ok' }) },
     })
 
-    await kx.agents.spawn('test', makeAgent('Test'))
-
-    expect(() => kx.start()).toThrow('Secret "MISSING_KEY" is configured but not found in storage')
+    // onStart fires during register() — should throw for missing secret
+    expect(kx.daemons.register(secretd({
+      storage: new InMemorySecretStorage({}),
+      secrets: {
+        MISSING_KEY: { grants: ['test'], allowedTools: ['http'] },
+      },
+    }))).rejects.toThrow('Secret "MISSING_KEY" is configured but not found in storage')
   })
 })

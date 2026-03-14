@@ -20,25 +20,25 @@ import type {
 export class DaemonManager {
   private daemons: DaemonDefinition[] = []
 
-  constructor(initial?: DaemonDefinition[]) {
-    if (initial) {
-      for (const d of initial) {
-        this.register(d)
-      }
-    }
-  }
-
-  /** Register a daemon, maintaining order sort */
-  register(daemon: DaemonDefinition): void {
-    // Remove existing daemon with same ID (allows re-registration)
+  /** Register a daemon, maintaining order sort. Returns replaced daemon if re-registering. */
+  register(daemon: DaemonDefinition): DaemonDefinition | undefined {
+    const existing = this.daemons.find(d => d.id === daemon.id)
     this.daemons = this.daemons.filter(d => d.id !== daemon.id)
     this.daemons.push(daemon)
     this.daemons.sort((a, b) => a.order - b.order)
+    return existing
   }
 
-  /** Remove a daemon by ID */
-  deregister(id: string): void {
+  /** Remove a daemon by ID. Returns removed daemon if found. */
+  deregister(id: string): DaemonDefinition | undefined {
+    const existing = this.daemons.find(d => d.id === id)
     this.daemons = this.daemons.filter(d => d.id !== id)
+    return existing
+  }
+
+  /** Get a daemon by ID */
+  get(id: string): DaemonDefinition | undefined {
+    return this.daemons.find(d => d.id === id)
   }
 
   /** List active daemons (id + order) */

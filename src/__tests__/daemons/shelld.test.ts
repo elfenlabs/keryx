@@ -121,9 +121,7 @@ describe('shelld', () => {
     const driver = createMockDriver()
 
     const shell = shelld({ driver })
-    const kx = createKeryx({
-      daemons: [shell.daemon],
-      pollingInterval: 10,
+    const kx = createKeryx({      pollingInterval: 10,
       defaultProvider: {
         generate: async (params: any) => {
           capturedTools = params.tools ?? []
@@ -131,6 +129,8 @@ describe('shelld', () => {
         },
       },
     })
+
+    await kx.daemons.register(shell.daemon)
 
     await kx.agents.spawn('coder', makeAgent('Coder', { 'shelld': { hosts: ['dev-box'] } }))
 
@@ -150,9 +150,7 @@ describe('shelld', () => {
     const driver = createMockDriver()
 
     const shell = shelld({ driver })
-    const kx = createKeryx({
-      daemons: [shell.daemon],
-      pollingInterval: 10,
+    const kx = createKeryx({      pollingInterval: 10,
       defaultProvider: {
         generate: async (params: any) => {
           capturedTools = params.tools ?? []
@@ -160,6 +158,8 @@ describe('shelld', () => {
         },
       },
     })
+
+    await kx.daemons.register(shell.daemon)
 
     await kx.agents.spawn('plain', makeAgent('Plain Agent'))
 
@@ -181,9 +181,7 @@ describe('shelld', () => {
     driver.autoComplete = { output: 'hello world\n', exitCode: 0 }
 
     const shell = shelld({ driver })
-    const kx = createKeryx({
-      daemons: [shell.daemon],
-      pollingInterval: 10,
+    const kx = createKeryx({      pollingInterval: 10,
       defaultProvider: {
         generate: async (params: any) => {
           const systemMsg = params.messages.find((m: any) => m.role === 'system')
@@ -206,6 +204,8 @@ describe('shelld', () => {
         },
       },
     })
+
+    await kx.daemons.register(shell.daemon)
 
     await kx.agents.spawn('coder', makeAgent('Coder', { 'shelld': { hosts: ['dev-box'] } }))
 
@@ -234,9 +234,7 @@ describe('shelld', () => {
     driver.autoComplete = { output: largeOutput, exitCode: 0 }
 
     const shell = shelld({ driver, headChars: 100, tailChars: 100 })
-    const kx = createKeryx({
-      daemons: [shell.daemon],
-      pollingInterval: 10,
+    const kx = createKeryx({      pollingInterval: 10,
       defaultProvider: {
         generate: async (params: any) => {
           const systemMsg = params.messages.find((m: any) => m.role === 'system')
@@ -260,6 +258,8 @@ describe('shelld', () => {
       },
     })
 
+    await kx.daemons.register(shell.daemon)
+
     await kx.agents.spawn('coder', makeAgent('Coder', { 'shelld': { hosts: ['dev-box'] } }))
 
     kx.start()
@@ -282,9 +282,7 @@ describe('shelld', () => {
     // No autoComplete — process stays running
 
     const shell = shelld({ driver })
-    const kx = createKeryx({
-      daemons: [shell.daemon],
-      pollingInterval: 10,
+    const kx = createKeryx({      pollingInterval: 10,
       defaultProvider: {
         generate: async (params: any) => {
           const systemMsg = params.messages.find((m: any) => m.role === 'system')
@@ -307,6 +305,8 @@ describe('shelld', () => {
         },
       },
     })
+
+    await kx.daemons.register(shell.daemon)
 
     await kx.agents.spawn('coder', makeAgent('Coder', { 'shelld': { hosts: ['dev-box'] } }))
 
@@ -331,9 +331,7 @@ describe('shelld', () => {
     driver.autoComplete = { output, exitCode: 0 }
 
     const shell = shelld({ driver })
-    const kx = createKeryx({
-      daemons: [shell.daemon],
-      pollingInterval: 10,
+    const kx = createKeryx({      pollingInterval: 10,
       defaultProvider: {
         generate: async (params: any) => {
           const systemMsg = params.messages.find((m: any) => m.role === 'system')
@@ -370,6 +368,8 @@ describe('shelld', () => {
       },
     })
 
+    await kx.daemons.register(shell.daemon)
+
     await kx.agents.spawn('coder', makeAgent('Coder', { 'shelld': { hosts: ['dev-box'] } }))
 
     kx.start()
@@ -393,9 +393,7 @@ describe('shelld', () => {
     // No autoComplete — process stays running for stdin
 
     const shell = shelld({ driver })
-    const kx = createKeryx({
-      daemons: [shell.daemon],
-      pollingInterval: 10,
+    const kx = createKeryx({      pollingInterval: 10,
       defaultProvider: {
         generate: async (params: any) => {
           const systemMsg = params.messages.find((m: any) => m.role === 'system')
@@ -431,6 +429,8 @@ describe('shelld', () => {
       },
     })
 
+    await kx.daemons.register(shell.daemon)
+
     await kx.agents.spawn('coder', makeAgent('Coder', { 'shelld': { hosts: ['dev-box'] } }))
 
     kx.start()
@@ -451,9 +451,7 @@ describe('shelld', () => {
     const driver = createMockDriver()
 
     const shell = shelld({ driver })
-    const kx = createKeryx({
-      daemons: [shell.daemon],
-      pollingInterval: 10,
+    const kx = createKeryx({      pollingInterval: 10,
       defaultProvider: {
         generate: async (params: any) => {
           const systemMsg = params.messages.find((m: any) => m.role === 'system')
@@ -477,6 +475,8 @@ describe('shelld', () => {
       },
     })
 
+    await kx.daemons.register(shell.daemon)
+
     await kx.agents.spawn('coder', makeAgent('Coder', { 'shelld': { hosts: ['dev-box'] } }))
 
     kx.start()
@@ -497,9 +497,7 @@ describe('shelld', () => {
     driver.autoComplete = { output: 'secret data', exitCode: 0 }
 
     const shell = shelld({ driver })
-    const kx = createKeryx({
-      daemons: [shell.daemon],
-      pollingInterval: 10,
+    const kx = createKeryx({      pollingInterval: 10,
       defaultProvider: {
         generate: async (params: any) => {
           const systemMsg = params.messages.find((m: any) => m.role === 'system')
@@ -540,6 +538,8 @@ describe('shelld', () => {
       },
     })
 
+    await kx.daemons.register(shell.daemon)
+
     await kx.agents.spawn('admin', makeAgent('Admin', { 'shelld': { hosts: ['secure-box'] } }))
     await kx.agents.spawn('spy', makeAgent('Spy', { 'shelld': { hosts: ['public-box'] } }))
 
@@ -564,9 +564,7 @@ describe('shelld', () => {
     driver.autoComplete = { output: 'shared output\n', exitCode: 0 }
 
     const shell = shelld({ driver })
-    const kx = createKeryx({
-      daemons: [shell.daemon],
-      pollingInterval: 10,
+    const kx = createKeryx({      pollingInterval: 10,
       defaultProvider: {
         generate: async (params: any) => {
           const systemMsg = params.messages.find((m: any) => m.role === 'system')
@@ -607,6 +605,8 @@ describe('shelld', () => {
       },
     })
 
+    await kx.daemons.register(shell.daemon)
+
     await kx.agents.spawn('dev-a', makeAgent('Dev A', { 'shelld': { hosts: ['shared-box'] } }))
     await kx.agents.spawn('dev-b', makeAgent('Dev B', { 'shelld': { hosts: ['shared-box'] } }))
 
@@ -628,9 +628,7 @@ describe('shelld', () => {
     let callCount = 0
 
     const shell = shelld({ driver })
-    const kx = createKeryx({
-      daemons: [shell.daemon],
-      pollingInterval: 10,
+    const kx = createKeryx({      pollingInterval: 10,
       defaultProvider: {
         generate: async (params: any) => {
           const systemMsg = params.messages.find((m: any) => m.role === 'system')
@@ -651,6 +649,8 @@ describe('shelld', () => {
         },
       },
     })
+
+    await kx.daemons.register(shell.daemon)
 
     await kx.agents.spawn('coder', makeAgent('Coder', { 'shelld': { hosts: ['dev-box'] } }))
 

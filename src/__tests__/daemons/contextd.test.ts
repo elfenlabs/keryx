@@ -25,9 +25,7 @@ describe('contextd', () => {
   test('context restored across activations when persist=true', async () => {
     const allMessages: any[][] = []
 
-    const kx = createKeryx({
-      daemons: [contextd()],
-      pollingInterval: 10,
+    const kx = createKeryx({      pollingInterval: 10,
       defaultProvider: {
         generate: async (params: any) => {
           // Track what messages the agent sees
@@ -37,6 +35,8 @@ describe('contextd', () => {
         },
       },
     })
+
+    await kx.daemons.register(contextd())
 
     await kx.agents.spawn('stateful', makeAgent('Stateful Agent', {
       'context': { persist: true },
@@ -65,9 +65,7 @@ describe('contextd', () => {
   test('context NOT restored when persist is not configured', async () => {
     const allMessages: any[][] = []
 
-    const kx = createKeryx({
-      daemons: [contextd()],
-      pollingInterval: 10,
+    const kx = createKeryx({      pollingInterval: 10,
       defaultProvider: {
         generate: async (params: any) => {
           const userMsgs = params.messages.filter((m: any) => m.role === 'user')
@@ -76,6 +74,8 @@ describe('contextd', () => {
         },
       },
     })
+
+    await kx.daemons.register(contextd())
 
     await kx.agents.spawn('stateless', makeAgent('Stateless Agent')) // no config
 
@@ -98,9 +98,7 @@ describe('contextd', () => {
     let callCount = 0
     const allMessages: any[][] = []
 
-    const kx = createKeryx({
-      daemons: [contextd()],
-      pollingInterval: 10,
+    const kx = createKeryx({      pollingInterval: 10,
       defaultProvider: {
         generate: async (params: any) => {
           callCount++
@@ -115,6 +113,8 @@ describe('contextd', () => {
         },
       },
     })
+
+    await kx.daemons.register(contextd())
 
     await kx.agents.spawn('flaky', makeAgent('Flaky Agent', {
       'context': { persist: true },

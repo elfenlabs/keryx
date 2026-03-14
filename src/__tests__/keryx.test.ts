@@ -64,7 +64,6 @@ describe('Keryx Integration', () => {
     providerBehaviors = new Map()
 
     const kx = createKeryx({
-      daemons,
       pollingInterval: 10,
       defaultProvider: {
         generate: async (params: any) => {
@@ -91,6 +90,13 @@ describe('Keryx Integration', () => {
         },
       },
     })
+
+    // Register daemons via runtime API
+    if (daemons) {
+      for (const d of daemons) {
+        await kx.daemons.register(d)
+      }
+    }
 
     // Spawn all agents
     for (const { id, def } of agents) {
@@ -313,12 +319,15 @@ describe('Keryx Integration', () => {
     }
 
     const kx = createKeryx({
-      daemons: [daemon2, daemon1], // deliberately out of order
       pollingInterval: 10,
       defaultProvider: {
         generate: async () => ({ content: 'ok' }),
       },
     })
+
+    // Register deliberately out of order — manager sorts by order
+    await kx.daemons.register(daemon2)
+    await kx.daemons.register(daemon1)
 
     await kx.agents.spawn('test', makeAgent('Test'))
     kx.start()
@@ -356,7 +365,6 @@ describe('Keryx Integration', () => {
     }
 
     const kx = createKeryx({
-      daemons: [daemon],
       pollingInterval: 10,
       defaultProvider: {
         generate: async (params: any) => {
@@ -365,6 +373,8 @@ describe('Keryx Integration', () => {
         },
       },
     })
+
+    await kx.daemons.register(daemon)
 
     await kx.agents.spawn('test', makeAgent('Test'))
     kx.start()
@@ -390,7 +400,6 @@ describe('Keryx Integration', () => {
     }
 
     const kx = createKeryx({
-      daemons: [daemon],
       pollingInterval: 10,
       defaultProvider: {
         generate: async (params: any) => {
@@ -399,6 +408,8 @@ describe('Keryx Integration', () => {
         },
       },
     })
+
+    await kx.daemons.register(daemon)
 
     await kx.agents.spawn('test', makeAgent('Test'))
     kx.start()
@@ -411,7 +422,7 @@ describe('Keryx Integration', () => {
 
   // ─── Runtime Daemon Management ────────────────────────────────────────
 
-  test('daemons.register/deregister/list work at runtime', () => {
+  test('daemons.register/deregister/list work at runtime', async () => {
     const kx = createKeryx({
       pollingInterval: 100,
       defaultProvider: {
@@ -421,19 +432,98 @@ describe('Keryx Integration', () => {
 
     expect(kx.daemons.list()).toEqual([])
 
-    kx.daemons.register({ id: 'test-daemon', order: 5 })
+    await kx.daemons.register({ id: 'test-daemon', order: 5 })
     expect(kx.daemons.list()).toEqual([{ id: 'test-daemon', order: 5 }])
 
-    kx.daemons.register({ id: 'another', order: 1 })
+    await kx.daemons.register({ id: 'another', order: 1 })
     // Should be sorted by order
     expect(kx.daemons.list()).toEqual([
       { id: 'another', order: 1 },
       { id: 'test-daemon', order: 5 },
     ])
 
-    kx.daemons.deregister('test-daemon')
+    await kx.daemons.deregister('test-daemon')
     expect(kx.daemons.list()).toEqual([{ id: 'another', order: 1 }])
   })
+
+  test('register() always calls onStart', async () => {
+    const hookLog: string[] = []
+    const kx = createKeryx({
+      pollingInterval: 100,
+      defaultProvider: { generate: async () => ({ content: 'ok' }) },
+    })
+
+    await kx.daemons.register({
+      id: 'my-daemon',
+      order: 10,
+      onStart: () => { hookLog.push('started') },
+      onStop: () => { hookLog.push('stopped') },
+    })
+
+    // onStart should have been called immediately on register
+    expect(hookLog).toEqual(['started'])
+
+    await kx.stop()
+    // onStop should fire during stop()
+    expect(hookLog).toEqual(['started', 'stopped'])
+  })
+
+  test('deregister() always calls onStop', async () => {
+    const hookLog: string[] = []
+    const kx = createKeryx({
+      pollingInterval: 100,
+      defaultProvider: { generate: async () => ({ content: 'ok' }) },
+    })
+
+    await kx.daemons.register({
+      id: 'will-remove',
+      order: 10,
+      onStart: () => { hookLog.push('started') },
+      onStop: () => { hookLog.push('stopped') },
+    })
+
+    expect(hookLog).toEqual(['started'])
+
+    await kx.daemons.deregister('will-remove')
+    expect(hookLog).toEqual(['started', 'stopped'])
+
+    await kx.stop()
+    // onStop should NOT fire again — daemon was already removed
+    expect(hookLog).toEqual(['started', 'stopped'])
+  })
+
+  test('re-register (same ID) calls onStop on old, onStart on new', async () => {
+    const hookLog: string[] = []
+    const kx = createKeryx({
+      pollingInterval: 100,
+      defaultProvider: { generate: async () => ({ content: 'ok' }) },
+    })
+
+    await kx.daemons.register({
+      id: 'hot-reload',
+      order: 10,
+      onStart: () => { hookLog.push('v1:started') },
+      onStop: () => { hookLog.push('v1:stopped') },
+    })
+
+    expect(hookLog).toEqual(['v1:started'])
+
+    // Re-register with same ID → hot-reload
+    await kx.daemons.register({
+      id: 'hot-reload',
+      order: 10,
+      onStart: () => { hookLog.push('v2:started') },
+      onStop: () => { hookLog.push('v2:stopped') },
+    })
+
+    // Old onStop, then new onStart
+    expect(hookLog).toEqual(['v1:started', 'v1:stopped', 'v2:started'])
+
+    await kx.stop()
+    expect(hookLog).toEqual(['v1:started', 'v1:stopped', 'v2:started', 'v2:stopped'])
+  })
+
+
 
   // ─── Failure Notification ─────────────────────────────────────────────
 
@@ -526,12 +616,13 @@ describe('Keryx Integration', () => {
     }
 
     const kx = createKeryx({
-      daemons: [daemon],
       pollingInterval: 10,
       defaultProvider: {
         generate: async () => ({ content: 'The response text', usage: { promptTokens: 100, completionTokens: 50, totalTokens: 150 } }),
       },
     })
+
+    await kx.daemons.register(daemon)
 
     await kx.agents.spawn('test', makeAgent('Test'))
     kx.start()
@@ -556,12 +647,13 @@ describe('Keryx Integration', () => {
     }
 
     const kx = createKeryx({
-      daemons: [daemon],
       pollingInterval: 10,
       defaultProvider: {
         generate: async () => { throw new Error('Boom!') },
       },
     })
+
+    await kx.daemons.register(daemon)
 
     await kx.agents.spawn('fail', makeAgent('Fail Agent'))
     kx.start()
@@ -674,7 +766,6 @@ describe('Keryx Integration', () => {
     }
 
     const kx = createKeryx({
-      daemons: [daemon],
       pollingInterval: 10,
       defaultProvider: {
         generate: async (params: any) => {
@@ -683,6 +774,8 @@ describe('Keryx Integration', () => {
         },
       },
     })
+
+    await kx.daemons.register(daemon)
 
     const instance = await kx.agents.spawn('spawned', makeAgent('Spawned'))
     expect(spawnedId).toBe('spawned')
@@ -711,10 +804,11 @@ describe('Keryx Integration', () => {
     }
 
     const kx = createKeryx({
-      daemons: [daemon],
       pollingInterval: 10,
       defaultProvider: { generate: async () => ({ content: 'ok' }) },
     })
+
+    await kx.daemons.register(daemon)
 
     await kx.agents.spawn('target', makeAgent('Target'))
     kx.start()
@@ -739,7 +833,6 @@ describe('Keryx Integration', () => {
     }
 
     const kx = createKeryx({
-      daemons: [daemon],
       pollingInterval: 10,
       defaultProvider: {
         generate: async (params: any) => {
@@ -749,6 +842,8 @@ describe('Keryx Integration', () => {
         },
       },
     })
+
+    await kx.daemons.register(daemon)
 
     await kx.agents.spawn('vaulted', makeAgent('Vaulted'))
     kx.start()

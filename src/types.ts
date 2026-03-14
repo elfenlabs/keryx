@@ -170,7 +170,6 @@ export type DaemonDefinition = {
 
 /** Configuration for createKeryx() */
 export type KeryxConfig = {
-  daemons?: DaemonDefinition[]
   /** Named catalog of agent definitions for agent_spawn tool */
   definitions?: Record<string, AgentDefinition>
   /** Inbox polling interval in ms. Default: 100 */
@@ -206,8 +205,8 @@ export type KeryxInstance = {
   start: () => void
   stop: () => Promise<void>
   daemons: {
-    register: (daemon: DaemonDefinition) => void
-    deregister: (id: string) => void
+    register: (daemon: DaemonDefinition) => Promise<void>
+    deregister: (id: string) => Promise<void>
     list: () => { id: string; order: number }[]
   }
   /** Agent lifecycle and observability */

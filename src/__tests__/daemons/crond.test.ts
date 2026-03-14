@@ -25,16 +25,6 @@ describe('crond', () => {
     const receivedBodies: string[] = []
 
     const kx = createKeryx({
-      daemons: [
-        crond({
-          jobs: [{
-            id: 'test-job',
-            to: 'reporter',
-            body: 'Generate report',
-            intervalMs: 100,
-          }],
-        }),
-      ],
       pollingInterval: 10,
       defaultProvider: {
         generate: async (params: any) => {
@@ -45,6 +35,15 @@ describe('crond', () => {
         },
       },
     })
+
+    await kx.daemons.register(crond({
+      jobs: [{
+        id: 'test-job',
+        to: 'reporter',
+        body: 'Generate report',
+        intervalMs: 100,
+      }],
+    }))
 
     await kx.agents.spawn('reporter', makeAgent('Reporter'))
     kx.start()
@@ -61,14 +60,6 @@ describe('crond', () => {
     const received: Map<string, number> = new Map()
 
     const kx = createKeryx({
-      daemons: [
-        crond({
-          jobs: [
-            { id: 'daily-job', to: 'daily', body: 'Daily task', intervalMs: 200 },
-            { id: 'hourly-job', to: 'hourly', body: 'Hourly task', intervalMs: 100 },
-          ],
-        }),
-      ],
       pollingInterval: 10,
       defaultProvider: {
         generate: async (params: any) => {
@@ -82,6 +73,13 @@ describe('crond', () => {
         },
       },
     })
+
+    await kx.daemons.register(crond({
+      jobs: [
+        { id: 'daily-job', to: 'daily', body: 'Daily task', intervalMs: 200 },
+        { id: 'hourly-job', to: 'hourly', body: 'Hourly task', intervalMs: 100 },
+      ],
+    }))
 
     await kx.agents.spawn('daily', makeAgent('Daily Agent'))
     await kx.agents.spawn('hourly', makeAgent('Hourly Agent'))
@@ -101,16 +99,6 @@ describe('crond', () => {
     let callCount = 0
 
     const kx = createKeryx({
-      daemons: [
-        crond({
-          jobs: [{
-            id: 'tick',
-            to: 'ticker',
-            body: 'tick',
-            intervalMs: 50,
-          }],
-        }),
-      ],
       pollingInterval: 10,
       defaultProvider: {
         generate: async () => {
@@ -119,6 +107,15 @@ describe('crond', () => {
         },
       },
     })
+
+    await kx.daemons.register(crond({
+      jobs: [{
+        id: 'tick',
+        to: 'ticker',
+        body: 'tick',
+        intervalMs: 50,
+      }],
+    }))
 
     await kx.agents.spawn('ticker', makeAgent('Ticker'))
     kx.start()
@@ -136,17 +133,6 @@ describe('crond', () => {
     let capturedMetadata: Record<string, unknown> | undefined
 
     const kx = createKeryx({
-      daemons: [
-        crond({
-          jobs: [{
-            id: 'daily-report',
-            to: 'meta-test',
-            body: 'report',
-            intervalMs: 50,
-            metadata: { source: 'scheduler' },
-          }],
-        }),
-      ],
       pollingInterval: 10,
       defaultProvider: {
         generate: async (params: any) => {
@@ -161,6 +147,16 @@ describe('crond', () => {
         },
       },
     })
+
+    await kx.daemons.register(crond({
+      jobs: [{
+        id: 'daily-report',
+        to: 'meta-test',
+        body: 'report',
+        intervalMs: 50,
+        metadata: { source: 'scheduler' },
+      }],
+    }))
 
     await kx.agents.spawn('meta-test', makeAgent('Meta Test'))
     kx.start()
