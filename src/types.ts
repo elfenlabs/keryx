@@ -236,6 +236,7 @@ export type KeryxInstance = {
     getStatus: (id: string) => AgentStatus | undefined
     getInbox: (id: string) => Message[]
     flushInbox: (id: string) => number
+    abort: (id: string) => boolean
   }
 }
 

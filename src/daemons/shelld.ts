@@ -223,7 +223,7 @@ export function shelld(opts: ShelldOptions): ShelldHandle {
             timeout: {
               type: 'number',
               description: 'Max ms to wait before returning (default: 5000). The command continues running if it exceeds this.',
-              optional: true,
+              required: false,
             },
           },
           execute: async (args: { hostId: string; command: string; timeout?: number }) => {
@@ -307,12 +307,12 @@ export function shelld(opts: ShelldOptions): ShelldHandle {
             offset: {
               type: 'number',
               description: 'Character offset to start reading from (default: 0)',
-              optional: true,
+              required: false,
             },
             length: {
               type: 'number',
               description: 'Number of characters to read (default: 4000)',
-              optional: true,
+              required: false,
             },
           },
           execute: async (args: { commandId: string; offset?: number; length?: number }) => {

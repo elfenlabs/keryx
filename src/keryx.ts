@@ -266,6 +266,13 @@ export function createKeryx(config: KeryxConfig): KeryxInstance {
       flushInbox(id: string) {
         return inbox.flush(id)
       },
+
+      abort(id: string): boolean {
+        const controller = pm.abortControllers.get(id)
+        if (!controller) return false
+        controller.abort()
+        return true
+      },
     },
   }
 
