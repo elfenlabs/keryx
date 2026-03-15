@@ -21,6 +21,7 @@ export { shelld } from './daemons/shelld.js'
 
 // Types
 export type {
+  Attachment,
   Message,
   AgentDefinition,
   AgentInstance,

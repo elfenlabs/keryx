@@ -891,4 +891,211 @@ describe('Keryx Integration', () => {
 
     await kx.stop()
   })
+
+  // ─── Attachment Metadata Assembly ──────────────────────────────────────
+
+  test('image attachment assembles multipart content', async () => {
+    let capturedContent: any = null
+
+    const kx = createKeryx({
+      pollingInterval: 10,
+      defaultProvider: {
+        generate: async (params: any) => {
+          const userMsg = params.messages.find((m: any) => m.role === 'user')
+          capturedContent = userMsg.content
+          return { content: 'ok' }
+        },
+      },
+    })
+
+    await kx.agents.spawn('vision', makeAgent('Vision'))
+    kx.start()
+    await kx.send({
+      to: 'vision',
+      body: 'What is in this photo?',
+      metadata: {
+        attachments: [
+          { url: 'https://example.com/photo.jpg', mimeType: 'image/jpeg' },
+        ],
+      },
+    })
+    await wait(200)
+
+    // Should be ContentPart[] with text + image_url
+    expect(Array.isArray(capturedContent)).toBe(true)
+    expect(capturedContent).toEqual([
+      { type: 'text', text: 'What is in this photo?' },
+      { type: 'image_url', image_url: { url: 'https://example.com/photo.jpg' } },
+    ])
+
+    await kx.stop()
+  })
+
+  test('video attachment assembles multipart content', async () => {
+    let capturedContent: any = null
+
+    const kx = createKeryx({
+      pollingInterval: 10,
+      defaultProvider: {
+        generate: async (params: any) => {
+          const userMsg = params.messages.find((m: any) => m.role === 'user')
+          capturedContent = userMsg.content
+          return { content: 'ok' }
+        },
+      },
+    })
+
+    await kx.agents.spawn('vision', makeAgent('Vision'))
+    kx.start()
+    await kx.send({
+      to: 'vision',
+      body: 'Describe this clip',
+      metadata: {
+        attachments: [
+          { url: 'https://example.com/clip.mp4', mimeType: 'video/mp4' },
+        ],
+      },
+    })
+    await wait(200)
+
+    expect(Array.isArray(capturedContent)).toBe(true)
+    expect(capturedContent).toEqual([
+      { type: 'text', text: 'Describe this clip' },
+      { type: 'video_url', video_url: { url: 'https://example.com/clip.mp4' } },
+    ])
+
+    await kx.stop()
+  })
+
+  test('mixed attachments assemble all native types', async () => {
+    let capturedContent: any = null
+
+    const kx = createKeryx({
+      pollingInterval: 10,
+      defaultProvider: {
+        generate: async (params: any) => {
+          const userMsg = params.messages.find((m: any) => m.role === 'user')
+          capturedContent = userMsg.content
+          return { content: 'ok' }
+        },
+      },
+    })
+
+    await kx.agents.spawn('multi', makeAgent('Multi'))
+    kx.start()
+    await kx.send({
+      to: 'multi',
+      body: 'Analyze these',
+      metadata: {
+        attachments: [
+          { url: 'https://example.com/img.png', mimeType: 'image/png' },
+          { url: 'https://example.com/vid.webm', mimeType: 'video/webm' },
+        ],
+      },
+    })
+    await wait(200)
+
+    expect(Array.isArray(capturedContent)).toBe(true)
+    expect(capturedContent).toHaveLength(3)
+    expect(capturedContent[0]).toEqual({ type: 'text', text: 'Analyze these' })
+    expect(capturedContent[1]).toEqual({ type: 'image_url', image_url: { url: 'https://example.com/img.png' } })
+    expect(capturedContent[2]).toEqual({ type: 'video_url', video_url: { url: 'https://example.com/vid.webm' } })
+
+    await kx.stop()
+  })
+
+  test('no attachments keeps plain string content', async () => {
+    let capturedContent: any = null
+
+    const kx = createKeryx({
+      pollingInterval: 10,
+      defaultProvider: {
+        generate: async (params: any) => {
+          const userMsg = params.messages.find((m: any) => m.role === 'user')
+          capturedContent = userMsg.content
+          return { content: 'ok' }
+        },
+      },
+    })
+
+    await kx.agents.spawn('plain', makeAgent('Plain'))
+    kx.start()
+    await kx.send({ to: 'plain', body: 'Just text, no attachments' })
+    await wait(200)
+
+    expect(typeof capturedContent).toBe('string')
+    expect(capturedContent).toBe('Just text, no attachments')
+
+    await kx.stop()
+  })
+
+  test('non-native mimeType is skipped (daemon territory)', async () => {
+    let capturedContent: any = null
+
+    const kx = createKeryx({
+      pollingInterval: 10,
+      defaultProvider: {
+        generate: async (params: any) => {
+          const userMsg = params.messages.find((m: any) => m.role === 'user')
+          capturedContent = userMsg.content
+          return { content: 'ok' }
+        },
+      },
+    })
+
+    await kx.agents.spawn('doc', makeAgent('Doc'))
+    kx.start()
+    await kx.send({
+      to: 'doc',
+      body: 'Read this PDF',
+      metadata: {
+        attachments: [
+          { url: 'https://example.com/report.pdf', mimeType: 'application/pdf' },
+        ],
+      },
+    })
+    await wait(200)
+
+    // PDF has no native ContentPart — should fall through to plain string
+    expect(typeof capturedContent).toBe('string')
+    expect(capturedContent).toBe('Read this PDF')
+
+    await kx.stop()
+  })
+
+  test('empty body with attachment omits text part', async () => {
+    let capturedContent: any = null
+
+    const kx = createKeryx({
+      pollingInterval: 10,
+      defaultProvider: {
+        generate: async (params: any) => {
+          const userMsg = params.messages.find((m: any) => m.role === 'user')
+          capturedContent = userMsg.content
+          return { content: 'ok' }
+        },
+      },
+    })
+
+    await kx.agents.spawn('silent', makeAgent('Silent'))
+    kx.start()
+    await kx.send({
+      to: 'silent',
+      body: '',
+      metadata: {
+        attachments: [
+          { url: 'data:image/png;base64,iVBOR...', mimeType: 'image/png' },
+        ],
+      },
+    })
+    await wait(200)
+
+    // Should only have image_url — no empty text part
+    expect(Array.isArray(capturedContent)).toBe(true)
+    expect(capturedContent).toEqual([
+      { type: 'image_url', image_url: { url: 'data:image/png;base64,iVBOR...' } },
+    ])
+
+    await kx.stop()
+  })
 })

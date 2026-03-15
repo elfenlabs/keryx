@@ -46,6 +46,6 @@
         "typescript": "^5.9.3"
     },
     "peerDependencies": {
-        "@elfenlabs/nous": "^0.6.0"
+        "@elfenlabs/nous": "^0.7.0"
     }
 }

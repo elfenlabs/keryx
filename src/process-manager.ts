@@ -5,11 +5,12 @@
  * manages serial-per-agent execution, and handles force interrupts.
  */
 
-import { createContext, runAgent, AgentAbortError, type Tool, type AgentResult } from '@elfenlabs/nous'
+import { createContext, runAgent, AgentAbortError, type Tool, type AgentResult, type ContentPart } from '@elfenlabs/nous'
 import type { RunStatus } from '@elfenlabs/nous'
 import type {
   AgentDefinition,
   AgentInstance,
+  Attachment,
   KeryxInstance,
   Message,
   ActivationContext,
@@ -316,7 +317,27 @@ export class ProcessManager {
     // Push the message body as user message (prefix with sender for inter-agent clarity)
     const isAgentSender = msg.from ? this.registry.has(msg.from) : false
     const body = isAgentSender ? `[From ${msg.from}]\n${msg.body}` : msg.body
-    ctx.push({ role: 'user', content: body })
+
+    // Assemble multipart content if native-format attachments are present
+    const attachments = (msg.metadata?.attachments ?? []) as Attachment[]
+    const nativeParts: ContentPart[] = []
+    for (const att of attachments) {
+      if (att.mimeType.startsWith('image/')) {
+        nativeParts.push({ type: 'image_url', image_url: { url: att.url } })
+      } else if (att.mimeType.startsWith('video/')) {
+        nativeParts.push({ type: 'video_url', video_url: { url: att.url } })
+      }
+      // Non-native types (PDF, audio, etc.) are daemon territory — skip here
+    }
+
+    if (nativeParts.length > 0) {
+      const parts: ContentPart[] = []
+      if (body) parts.push({ type: 'text', text: body })
+      parts.push(...nativeParts)
+      ctx.push({ role: 'user', content: parts })
+    } else {
+      ctx.push({ role: 'user', content: body })
+    }
 
     // Create abort controller for this activation
     const abortController = new AbortController()

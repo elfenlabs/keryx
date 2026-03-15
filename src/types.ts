@@ -38,6 +38,25 @@ export type Message = {
   discardedAt?: Date
 }
 
+/**
+ * An attachment transported via message metadata.
+ *
+ * Convention: messages carry attachments in `metadata.attachments: Attachment[]`.
+ * The bus itself stays text-only — attachments are assembled into Nous
+ * ContentPart[] at activation time by the process manager (for native types
+ * like images/video) or by daemons (for formats requiring pre-processing).
+ */
+export type Attachment = {
+  /** HTTPS URL or data:... base64 URI */
+  url: string
+  /** MIME type, e.g. 'image/jpeg', 'video/mp4' */
+  mimeType: string
+  /** Optional original filename */
+  filename?: string
+  /** Optional byte size (for budget/quota decisions) */
+  sizeBytes?: number
+}
+
 // ── Agent Definition & Instance ─────────────────────────────────────────────
 
 /** Static agent template — the reusable blueprint (no id) */
