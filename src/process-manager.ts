@@ -30,6 +30,27 @@ import { buildPromptAddendum } from './prompt.js'
 /** Internal metadata type for destroy messages */
 const DESTROY_MESSAGE_TYPE = '__destroy__'
 
+/** Check if a MIME type matches any of the given patterns (e.g. 'image/*' matches 'image/jpeg') */
+function mimeMatches(mimeType: string, patterns: string[]): boolean {
+  return patterns.some(p =>
+    p.endsWith('/*')
+      ? mimeType.startsWith(p.slice(0, -1))  // 'image/*' → startsWith('image/')
+      : mimeType === p                        // 'application/pdf' → exact match
+  )
+}
+
+/** Map an Attachment to the best ContentPart variant */
+function attachmentToContentPart(att: Attachment): ContentPart {
+  if (att.mimeType.startsWith('image/')) {
+    return { type: 'image_url', image_url: { url: att.url } }
+  }
+  if (att.mimeType.startsWith('video/')) {
+    return { type: 'video_url', video_url: { url: att.url } }
+  }
+  // Generic file passthrough for provider-native non-standard types (PDF, etc.)
+  return { type: 'file', file: { url: att.url, mime_type: att.mimeType, name: att.filename } }
+}
+
 export class ProcessManager {
   readonly inbox: Inbox
   readonly registry: Registry
@@ -318,19 +339,39 @@ export class ProcessManager {
     const isAgentSender = msg.from ? this.registry.has(msg.from) : false
     const body = isAgentSender ? `[From ${msg.from}]\n${msg.body}` : msg.body
 
-    // Assemble multipart content if native-format attachments are present
+    // Resolve provider early — needed for supportedMedia check
+    const provider = agentDef.provider ?? this.defaultProvider
+    const supported = provider.supportedMedia ?? []
+
+    // Assemble attachments using the 3-tier fallback:
+    //   1. Provider supports mimeType → ContentPart (image_url, video_url, or file)
+    //   2. Daemon handled it in onBeforeActivation → already removed from attachments
+    //   3. Nobody handles it → inject unsupported notice as text
     const attachments = (msg.metadata?.attachments ?? []) as Attachment[]
     const nativeParts: ContentPart[] = []
+    const unsupported: Attachment[] = []
+
     for (const att of attachments) {
-      if (att.mimeType.startsWith('image/')) {
-        nativeParts.push({ type: 'image_url', image_url: { url: att.url } })
-      } else if (att.mimeType.startsWith('video/')) {
-        nativeParts.push({ type: 'video_url', video_url: { url: att.url } })
+      if (mimeMatches(att.mimeType, supported)) {
+        nativeParts.push(attachmentToContentPart(att))
+      } else {
+        unsupported.push(att)
       }
-      // Non-native types (PDF, audio, etc.) are daemon territory — skip here
     }
 
-    if (nativeParts.length > 0) {
+    // Build unsupported notice for tier 3
+    if (unsupported.length > 0) {
+      const notices = unsupported
+        .map(a => `[Unsupported attachment: ${a.filename ?? 'unnamed'} (${a.mimeType})]`)
+        .join('\n')
+      const textWithNotice = body ? `${body}\n\n${notices}` : notices
+      if (nativeParts.length > 0) {
+        const parts: ContentPart[] = [{ type: 'text', text: textWithNotice }, ...nativeParts]
+        ctx.push({ role: 'user', content: parts })
+      } else {
+        ctx.push({ role: 'user', content: textWithNotice })
+      }
+    } else if (nativeParts.length > 0) {
       const parts: ContentPart[] = []
       if (body) parts.push({ type: 'text', text: body })
       parts.push(...nativeParts)
@@ -343,8 +384,7 @@ export class ProcessManager {
     const abortController = new AbortController()
     this.abortControllers.set(agentId, abortController)
 
-    // Create provider instance
-    const provider = agentDef.provider ?? this.defaultProvider
+    // Provider already resolved above
 
     let response: string | null = null
     let error: Error | null = null

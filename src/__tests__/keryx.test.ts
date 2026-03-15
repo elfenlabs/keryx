@@ -894,12 +894,13 @@ describe('Keryx Integration', () => {
 
   // ─── Attachment Metadata Assembly ──────────────────────────────────────
 
-  test('image attachment assembles multipart content', async () => {
+  test('image attachment assembles multipart content when provider supports it', async () => {
     let capturedContent: any = null
 
     const kx = createKeryx({
       pollingInterval: 10,
       defaultProvider: {
+        supportedMedia: ['image/*'],
         generate: async (params: any) => {
           const userMsg = params.messages.find((m: any) => m.role === 'user')
           capturedContent = userMsg.content
@@ -921,7 +922,6 @@ describe('Keryx Integration', () => {
     })
     await wait(200)
 
-    // Should be ContentPart[] with text + image_url
     expect(Array.isArray(capturedContent)).toBe(true)
     expect(capturedContent).toEqual([
       { type: 'text', text: 'What is in this photo?' },
@@ -931,12 +931,13 @@ describe('Keryx Integration', () => {
     await kx.stop()
   })
 
-  test('video attachment assembles multipart content', async () => {
+  test('video attachment assembles multipart content when provider supports it', async () => {
     let capturedContent: any = null
 
     const kx = createKeryx({
       pollingInterval: 10,
       defaultProvider: {
+        supportedMedia: ['video/*'],
         generate: async (params: any) => {
           const userMsg = params.messages.find((m: any) => m.role === 'user')
           capturedContent = userMsg.content
@@ -967,12 +968,13 @@ describe('Keryx Integration', () => {
     await kx.stop()
   })
 
-  test('mixed attachments assemble all native types', async () => {
+  test('mixed supported attachments assemble all native types', async () => {
     let capturedContent: any = null
 
     const kx = createKeryx({
       pollingInterval: 10,
       defaultProvider: {
+        supportedMedia: ['image/*', 'video/*'],
         generate: async (params: any) => {
           const userMsg = params.messages.find((m: any) => m.role === 'user')
           capturedContent = userMsg.content
@@ -1029,12 +1031,13 @@ describe('Keryx Integration', () => {
     await kx.stop()
   })
 
-  test('non-native mimeType is skipped (daemon territory)', async () => {
+  test('unsupported mimeType injects notice into context', async () => {
     let capturedContent: any = null
 
     const kx = createKeryx({
       pollingInterval: 10,
       defaultProvider: {
+        // No supportedMedia — text-only provider
         generate: async (params: any) => {
           const userMsg = params.messages.find((m: any) => m.role === 'user')
           capturedContent = userMsg.content
@@ -1050,25 +1053,27 @@ describe('Keryx Integration', () => {
       body: 'Read this PDF',
       metadata: {
         attachments: [
-          { url: 'https://example.com/report.pdf', mimeType: 'application/pdf' },
+          { url: 'https://example.com/report.pdf', mimeType: 'application/pdf', filename: 'report.pdf' },
         ],
       },
     })
     await wait(200)
 
-    // PDF has no native ContentPart — should fall through to plain string
+    // Unsupported attachment → notice injected as text
     expect(typeof capturedContent).toBe('string')
-    expect(capturedContent).toBe('Read this PDF')
+    expect(capturedContent).toContain('Read this PDF')
+    expect(capturedContent).toContain('[Unsupported attachment: report.pdf (application/pdf)]')
 
     await kx.stop()
   })
 
-  test('empty body with attachment omits text part', async () => {
+  test('empty body with supported attachment omits text part', async () => {
     let capturedContent: any = null
 
     const kx = createKeryx({
       pollingInterval: 10,
       defaultProvider: {
+        supportedMedia: ['image/*'],
         generate: async (params: any) => {
           const userMsg = params.messages.find((m: any) => m.role === 'user')
           capturedContent = userMsg.content
@@ -1090,11 +1095,189 @@ describe('Keryx Integration', () => {
     })
     await wait(200)
 
-    // Should only have image_url — no empty text part
     expect(Array.isArray(capturedContent)).toBe(true)
     expect(capturedContent).toEqual([
       { type: 'image_url', image_url: { url: 'data:image/png;base64,iVBOR...' } },
     ])
+
+    await kx.stop()
+  })
+
+  test('PDF passes through as file ContentPart when provider supports it', async () => {
+    let capturedContent: any = null
+
+    const kx = createKeryx({
+      pollingInterval: 10,
+      defaultProvider: {
+        supportedMedia: ['image/*', 'application/pdf'],
+        generate: async (params: any) => {
+          const userMsg = params.messages.find((m: any) => m.role === 'user')
+          capturedContent = userMsg.content
+          return { content: 'ok' }
+        },
+      },
+    })
+
+    await kx.agents.spawn('gemini', makeAgent('Gemini'))
+    kx.start()
+    await kx.send({
+      to: 'gemini',
+      body: 'Summarize this report',
+      metadata: {
+        attachments: [
+          { url: 'https://example.com/report.pdf', mimeType: 'application/pdf', filename: 'report.pdf' },
+        ],
+      },
+    })
+    await wait(200)
+
+    expect(Array.isArray(capturedContent)).toBe(true)
+    expect(capturedContent).toEqual([
+      { type: 'text', text: 'Summarize this report' },
+      { type: 'file', file: { url: 'https://example.com/report.pdf', mime_type: 'application/pdf', name: 'report.pdf' } },
+    ])
+
+    await kx.stop()
+  })
+
+  test('image without supportedMedia is unsupported (text-only provider)', async () => {
+    let capturedContent: any = null
+
+    const kx = createKeryx({
+      pollingInterval: 10,
+      defaultProvider: {
+        // No supportedMedia — text-only
+        generate: async (params: any) => {
+          const userMsg = params.messages.find((m: any) => m.role === 'user')
+          capturedContent = userMsg.content
+          return { content: 'ok' }
+        },
+      },
+    })
+
+    await kx.agents.spawn('text-only', makeAgent('TextOnly'))
+    kx.start()
+    await kx.send({
+      to: 'text-only',
+      body: 'Look at this',
+      metadata: {
+        attachments: [
+          { url: 'https://example.com/photo.jpg', mimeType: 'image/jpeg', filename: 'photo.jpg' },
+        ],
+      },
+    })
+    await wait(200)
+
+    // No supportedMedia → image is unsupported, notice injected
+    expect(typeof capturedContent).toBe('string')
+    expect(capturedContent).toContain('Look at this')
+    expect(capturedContent).toContain('[Unsupported attachment: photo.jpg (image/jpeg)]')
+
+    await kx.stop()
+  })
+
+  test('mixed supported + unsupported attachments', async () => {
+    let capturedContent: any = null
+
+    const kx = createKeryx({
+      pollingInterval: 10,
+      defaultProvider: {
+        supportedMedia: ['image/*'],
+        generate: async (params: any) => {
+          const userMsg = params.messages.find((m: any) => m.role === 'user')
+          capturedContent = userMsg.content
+          return { content: 'ok' }
+        },
+      },
+    })
+
+    await kx.agents.spawn('partial', makeAgent('Partial'))
+    kx.start()
+    await kx.send({
+      to: 'partial',
+      body: 'Process these files',
+      metadata: {
+        attachments: [
+          { url: 'https://example.com/photo.jpg', mimeType: 'image/jpeg' },
+          { url: 'https://example.com/data.csv', mimeType: 'text/csv', filename: 'data.csv' },
+        ],
+      },
+    })
+    await wait(200)
+
+    // Image is supported → ContentPart, CSV is unsupported → notice in text
+    expect(Array.isArray(capturedContent)).toBe(true)
+    expect(capturedContent).toHaveLength(2)
+    expect(capturedContent[0].type).toBe('text')
+    expect(capturedContent[0].text).toContain('Process these files')
+    expect(capturedContent[0].text).toContain('[Unsupported attachment: data.csv (text/csv)]')
+    expect(capturedContent[1]).toEqual({
+      type: 'image_url',
+      image_url: { url: 'https://example.com/photo.jpg' },
+    })
+
+    await kx.stop()
+  })
+
+  test('daemon can pre-process and remove attachments before assembly', async () => {
+    let capturedContent: any = null
+
+    const pdfDaemon: DaemonDefinition = {
+      id: 'pdf-processor',
+      order: 10,
+      onBeforeActivation: (ctx) => {
+        const atts = (ctx.message.metadata?.attachments ?? []) as any[]
+        const remaining: any[] = []
+        for (const att of atts) {
+          if (att.mimeType === 'application/pdf') {
+            // Daemon handles PDF: extract text and push into context
+            ctx.ctx.push({ role: 'user', content: `[Extracted from ${att.filename}]: Lorem ipsum dolor sit amet...` })
+          } else {
+            remaining.push(att)
+          }
+        }
+        // Remove handled attachments so process-manager doesn't double-push
+        if (ctx.message.metadata) {
+          ctx.message.metadata.attachments = remaining
+        }
+      },
+    }
+
+    const kx = createKeryx({
+      pollingInterval: 10,
+      defaultProvider: {
+        // No PDF support — daemon handles it
+        supportedMedia: ['image/*'],
+        generate: async (params: any) => {
+          capturedContent = params.messages
+            .filter((m: any) => m.role === 'user')
+            .map((m: any) => m.content)
+          return { content: 'ok' }
+        },
+      },
+    })
+
+    await kx.daemons.register(pdfDaemon)
+
+    await kx.agents.spawn('agent', makeAgent('Agent'))
+    kx.start()
+    await kx.send({
+      to: 'agent',
+      body: 'Review this document',
+      metadata: {
+        attachments: [
+          { url: 'https://example.com/report.pdf', mimeType: 'application/pdf', filename: 'report.pdf' },
+        ],
+      },
+    })
+    await wait(200)
+
+    // Daemon should have pushed extracted text, process-manager pushes body (no unsupported notice)
+    expect(capturedContent).toHaveLength(2)
+    // First: daemon-pushed extracted text
+    expect(capturedContent[0]).toContain('[Extracted from report.pdf]')
+    // Second: the message body (PDF was removed, no unsupported notice)
+    expect(capturedContent[1]).toBe('Review this document')
 
     await kx.stop()
   })
