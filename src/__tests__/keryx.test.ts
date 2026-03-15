@@ -177,7 +177,7 @@ describe('Keryx Integration', () => {
     await kx.agents.spawn('slow', makeAgent('Slow Agent'))
     kx.start()
     const controller = new AbortController()
-    const promise = kx.request({
+    const handle = kx.request({
       to: 'slow',
       body: 'test',
       signal: controller.signal,
@@ -187,7 +187,7 @@ describe('Keryx Integration', () => {
     await wait(30)
     controller.abort()
 
-    await expect(promise).rejects.toThrow('Request aborted')
+    await expect(handle.result).rejects.toThrow('Request aborted')
     // Wait for agent to finish processing the abort before stopping
     await wait(100)
     await kx.stop()
@@ -1278,6 +1278,167 @@ describe('Keryx Integration', () => {
     expect(capturedContent[0]).toContain('[Extracted from report.pdf]')
     // Second: the message body (PDF was removed, no unsupported notice)
     expect(capturedContent[1]).toBe('Review this document')
+
+    await kx.stop()
+  })
+
+  // ─── Streaming RequestHandle ──────────────────────────────────────────
+
+  test('RequestHandle.stream yields chunks incrementally', async () => {
+    const kx = createKeryx({
+      pollingInterval: 10,
+      defaultProvider: {
+        generate: async (params: any) => {
+          // Simulate streaming: call stream.onContent with individual chunks
+          const chunks = ['Hello', ' ', 'world', '!']
+          for (const chunk of chunks) {
+            params.stream?.onContent?.(chunk)
+            await new Promise(r => setTimeout(r, 10))
+          }
+          return { content: 'Hello world!' }
+        },
+      },
+    })
+
+    await kx.agents.spawn('streamer', makeAgent('Streamer'))
+    kx.start()
+
+    const handle = kx.request({ to: 'streamer', body: 'Say hello' })
+
+    // Collect chunks from the stream
+    const receivedChunks: string[] = []
+    for await (const chunk of handle.stream) {
+      receivedChunks.push(chunk)
+    }
+
+    // Verify chunks arrived
+    expect(receivedChunks).toEqual(['Hello', ' ', 'world', '!'])
+    // Verify result matches
+    const fullResponse = await handle.result
+    expect(fullResponse).toBe('Hello world!')
+
+    await kx.stop()
+  })
+
+  test('RequestHandle.abort() kills agent loop and rejects result', async () => {
+    let agentAborted = false
+
+    const kx = createKeryx({
+      pollingInterval: 10,
+      defaultProvider: {
+        generate: async (params: any) => {
+          const signal = params.signal as AbortSignal | undefined
+          // Simulate slow streaming
+          for (let i = 0; i < 20; i++) {
+            if (signal?.aborted) {
+              agentAborted = true
+              throw new Error('Agent was aborted')
+            }
+            params.stream?.onContent?.(`chunk${i} `)
+            await new Promise(r => setTimeout(r, 20))
+          }
+          return { content: 'should not reach' }
+        },
+      },
+    })
+
+    await kx.agents.spawn('slow', makeAgent('Slow'))
+    kx.start()
+
+    const handle = kx.request({ to: 'slow', body: 'generate' })
+
+    // Wait for some chunks to arrive, then abort
+    await wait(80)
+    handle.abort()
+
+    // Result should reject
+    await expect(handle.result).rejects.toThrow('Request aborted')
+    // Agent's Nous loop should have been killed
+    await wait(100)
+    expect(agentAborted).toBe(true)
+
+    await kx.stop()
+  })
+
+  test('RequestHandle.result resolves without consuming stream', async () => {
+    const kx = createKeryx({
+      pollingInterval: 10,
+      defaultProvider: {
+        generate: async (params: any) => {
+          params.stream?.onContent?.('chunk1')
+          params.stream?.onContent?.('chunk2')
+          return { content: 'full response' }
+        },
+      },
+    })
+
+    await kx.agents.spawn('lazy', makeAgent('Lazy'))
+    kx.start()
+
+    const handle = kx.request({ to: 'lazy', body: 'test' })
+
+    // Only await result — never consume .stream
+    const result = await handle.result
+    expect(result).toBe('full response')
+
+    await kx.stop()
+  })
+
+  test('RequestOptions.signal wires to abort (kills agent loop)', async () => {
+    let agentAborted = false
+
+    const kx = createKeryx({
+      pollingInterval: 10,
+      defaultProvider: {
+        generate: async (params: any) => {
+          const signal = params.signal as AbortSignal | undefined
+          for (let i = 0; i < 20; i++) {
+            if (signal?.aborted) {
+              agentAborted = true
+              throw new Error('Agent was aborted')
+            }
+            await new Promise(r => setTimeout(r, 20))
+          }
+          return { content: 'should not reach' }
+        },
+      },
+    })
+
+    await kx.agents.spawn('signal-test', makeAgent('SignalTest'))
+    kx.start()
+
+    const controller = new AbortController()
+    const handle = kx.request({
+      to: 'signal-test',
+      body: 'test',
+      signal: controller.signal,
+    })
+
+    await wait(80)
+    controller.abort()
+
+    await expect(handle.result).rejects.toThrow('Request aborted')
+    await wait(100)
+    expect(agentAborted).toBe(true)
+
+    await kx.stop()
+  })
+
+  test('await kx.request() returns string (backward compat)', async () => {
+    const kx = createKeryx({
+      pollingInterval: 10,
+      defaultProvider: {
+        generate: async () => ({ content: 'hello' }),
+      },
+    })
+
+    await kx.agents.spawn('compat', makeAgent('Compat'))
+    kx.start()
+
+    // Using await directly on the handle should return the string
+    const result = await kx.request({ to: 'compat', body: 'test' })
+    expect(typeof result).toBe('string')
+    expect(result).toBe('hello')
 
     await kx.stop()
   })

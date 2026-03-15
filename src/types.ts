@@ -8,11 +8,32 @@ import type { Tool, Context, SerializedContext, Provider, ActiveToolCall } from 
 
 // ── Pending Replies ─────────────────────────────────────────────────────────
 
+/** Handle returned by kx.request() — supports both streaming and await */
+export type RequestHandle = {
+  /** Async iterable of output chunks (text deltas) */
+  stream: AsyncIterable<string>
+  /** Resolves to the complete response string when done */
+  result: Promise<string>
+  /** Abort the request (kills the agent's Nous loop) */
+  abort: () => void
+  /** Thenable — makes `await kx.request(...)` return string */
+  then: <T1 = string, T2 = never>(
+    onfulfilled?: ((value: string) => T1 | PromiseLike<T1>) | null,
+    onrejected?: ((reason: unknown) => T2 | PromiseLike<T2>) | null,
+  ) => Promise<T1 | T2>
+}
+
 /** A pending reply awaiting an agent's response */
 export type PendingReply = {
   resolve: (response: string) => void
   reject?: (error: Error) => void
   timer?: ReturnType<typeof setTimeout>
+  /** Push a chunk to the stream (if streaming is active) */
+  pushChunk?: (chunk: string) => void
+  /** Close the stream (called when response is complete) */
+  closeStream?: () => void
+  /** Error the stream (called on failure) */
+  errorStream?: (error: Error) => void
 }
 
 /** Map of pending replies keyed by message ID */
@@ -220,7 +241,7 @@ export type RequestOptions = {
 /** The public Keryx API surface */
 export type KeryxInstance = {
   send: (opts: SendOptions) => Promise<void>
-  request: (opts: RequestOptions) => Promise<string>
+  request: (opts: RequestOptions) => RequestHandle
   start: () => void
   stop: () => Promise<void>
   daemons: {

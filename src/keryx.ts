@@ -12,6 +12,7 @@ import type {
   KeryxInstance,
   SendOptions,
   RequestOptions,
+  RequestHandle,
   SpawnOptions,
   DestroyOptions,
   DaemonDefinition,
@@ -84,32 +85,84 @@ export function createKeryx(config: KeryxConfig): KeryxInstance {
     },
 
     /**
-     * Request-reply: send a message and wait for a response.
-     * Registers a pending reply keyed by message ID, resolved when the agent finishes.
+     * Request-reply: send a message and get a streaming handle.
+     *
+     * Returns a RequestHandle that supports both streaming and await:
+     * - `handle.stream` — async iterable of output chunks
+     * - `handle.result` — resolves to the complete response
+     * - `handle.abort()` — kills the agent's Nous loop
+     * - `await handle` — returns string (backward compat via .then())
      */
-    async request(opts: RequestOptions): Promise<string> {
+    request(opts: RequestOptions): RequestHandle {
       const msgId = crypto.randomUUID()
+      const agentId = opts.to
 
-      return new Promise<string>((resolve, reject) => {
-        // Handle abort signal
-        if (opts.signal) {
-          if (opts.signal.aborted) {
-            reject(new Error('Request aborted'))
+      // ── Stream infrastructure (async generator) ─────────────────────
+      // Buffer for chunks that arrive before the consumer starts iterating
+      let chunkBuffer: string[] = []
+      let chunkResolve: (() => void) | null = null
+      let streamDone = false
+      let streamError: Error | null = null
+
+      function pushChunk(chunk: string): void {
+        if (streamDone) return
+        chunkBuffer.push(chunk)
+        if (chunkResolve) {
+          chunkResolve()
+          chunkResolve = null
+        }
+      }
+
+      function closeStream(): void {
+        streamDone = true
+        if (chunkResolve) {
+          chunkResolve()
+          chunkResolve = null
+        }
+      }
+
+      function errorStream(err: Error): void {
+        streamError = err
+        streamDone = true
+        if (chunkResolve) {
+          chunkResolve()
+          chunkResolve = null
+        }
+      }
+
+      async function* streamGenerator(): AsyncGenerator<string> {
+        while (true) {
+          // Yield any buffered chunks
+          while (chunkBuffer.length > 0) {
+            yield chunkBuffer.shift()!
+          }
+
+          // If done, check for trailing error
+          if (streamDone) {
+            if (streamError) throw streamError
             return
           }
-          opts.signal.addEventListener('abort', () => {
-            pendingReplies.delete(msgId)
-            reject(new Error('Request aborted'))
-          }, { once: true })
-        }
 
-        // Register the pending reply
-        pendingReplies.set(msgId, { resolve, reject })
+          // Wait for next chunk or completion
+          await new Promise<void>(resolve => { chunkResolve = resolve })
+        }
+      }
+
+      // ── Result promise ──────────────────────────────────────────────
+      const result = new Promise<string>((resolve, reject) => {
+        // Register the pending reply with stream hooks
+        pendingReplies.set(msgId, {
+          resolve,
+          reject,
+          pushChunk,
+          closeStream,
+          errorStream,
+        })
 
         // Build and enqueue the message
         const msg = {
           id: msgId,
-          to: opts.to,
+          to: agentId,
           from: null,
           body: opts.body,
           priority: opts.priority ?? 0,
@@ -129,6 +182,45 @@ export function createKeryx(config: KeryxConfig): KeryxInstance {
           reject(err)
         })
       })
+
+      // ── Abort ───────────────────────────────────────────────────────
+      let aborted = false
+      function abort(): void {
+        if (aborted) return
+        aborted = true
+        // Kill the agent's Nous loop
+        const controller = pm.abortControllers.get(agentId)
+        if (controller) {
+          controller.abort()
+        }
+        // Clean up pending reply (process-manager's finally block
+        // will also try, but we pre-empt to avoid races)
+        const pending = pendingReplies.get(msgId)
+        if (pending) {
+          pendingReplies.delete(msgId)
+          errorStream(new Error('Request aborted'))
+          pending.reject?.(new Error('Request aborted'))
+        }
+      }
+
+      // Wire external AbortSignal to abort()
+      if (opts.signal) {
+        if (opts.signal.aborted) {
+          abort()
+        } else {
+          opts.signal.addEventListener('abort', () => abort(), { once: true })
+        }
+      }
+
+      // ── Build handle ────────────────────────────────────────────────
+      const handle: RequestHandle = {
+        stream: streamGenerator(),
+        result,
+        abort,
+        then: (onfulfilled, onrejected) => result.then(onfulfilled, onrejected),
+      }
+
+      return handle
     },
 
     /** Start the inbox poller */

@@ -414,6 +414,11 @@ export class ProcessManager {
         },
         onOutput: (chunk) => {
           this.daemons.runOnAgentStream({ agentId, type: 'output', phase: 'chunk', chunk })
+          // Pipe chunk to pending reply stream (if streaming)
+          const pending = this.pendingReplies.get(msg.id)
+          if (pending?.pushChunk) {
+            pending.pushChunk(chunk)
+          }
         },
         onOutputEnd: () => {
           this.daemons.runOnAgentStream({ agentId, type: 'output', phase: 'end' })
@@ -498,8 +503,13 @@ export class ProcessManager {
       const pending = this.pendingReplies.get(msg.id)
       if (pending) {
         this.pendingReplies.delete(msg.id)
-        if (error) pending.reject?.(error)
-        else pending.resolve(response ?? '')
+        if (error) {
+          pending.errorStream?.(error)
+          pending.reject?.(error)
+        } else {
+          pending.closeStream?.()
+          pending.resolve(response ?? '')
+        }
       }
     }
   }

@@ -38,6 +38,7 @@ export type {
   KeryxInstance,
   SendOptions,
   RequestOptions,
+  RequestHandle,
   SpawnOptions,
   DestroyOptions,
   AgentStatus,
