@@ -68,6 +68,7 @@ export function createKeryx(config: KeryxConfig): KeryxInstance {
     async send(opts: SendOptions): Promise<void> {
       const msg = {
         id: crypto.randomUUID(),
+        activationId: crypto.randomUUID(),
         to: opts.to,
         from: opts.from ?? null,
         body: opts.body,
@@ -162,6 +163,7 @@ export function createKeryx(config: KeryxConfig): KeryxInstance {
           resolve: (responseText: string) => {
             // Build RequestResult from accumulated data
             resolve({
+              activationId: msgId,
               response: responseText,
               events: allEvents,
               usage: usageRef.value,
@@ -177,6 +179,7 @@ export function createKeryx(config: KeryxConfig): KeryxInstance {
         // Build and enqueue the message
         const msg = {
           id: msgId,
+          activationId: msgId,
           to: agentId,
           from: null,
           body: opts.body,

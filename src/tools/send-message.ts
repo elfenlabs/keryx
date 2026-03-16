@@ -10,9 +10,10 @@ import type { Inbox } from '../inbox.js'
 
 export function createSendMessageTool(opts: {
   fromAgentId: string
+  activationId: string
   inbox: Inbox
 }) {
-  const { fromAgentId, inbox } = opts
+  const { fromAgentId, activationId, inbox } = opts
 
   return createTool({
     id: 'message_send',
@@ -35,9 +36,10 @@ export function createSendMessageTool(opts: {
     execute: async (args: { to: string; body: string; priority?: number }) => {
       const { to, body, priority = 0 } = args
 
-      // Agent-to-agent message
+      // Agent-to-agent message — inherits activationId from parent
       inbox.enqueue({
         id: crypto.randomUUID(),
+        activationId,
         to,
         from: fromAgentId,
         body,

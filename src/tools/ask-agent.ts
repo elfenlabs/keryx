@@ -14,11 +14,12 @@ const DEFAULT_TIMEOUT_MS = 120_000 // 2 minutes
 
 export function createAskAgentTool(opts: {
   fromAgentId: string
+  activationId: string
   inbox: Inbox
   registry: Registry
   pendingReplies: PendingReplyMap
 }) {
-  const { fromAgentId, inbox, registry, pendingReplies } = opts
+  const { fromAgentId, activationId, inbox, registry, pendingReplies } = opts
 
   return createTool({
     id: 'agent_ask',
@@ -72,9 +73,10 @@ export function createAskAgentTool(opts: {
           timer,
         })
 
-        // Enqueue message to target agent's inbox
+        // Enqueue message to target agent's inbox — inherits activationId
         inbox.enqueue({
           id: msgId,
+          activationId,
           to,
           from: fromAgentId,
           body,

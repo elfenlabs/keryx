@@ -10,13 +10,15 @@ import type { Tool, Context, SerializedContext, Provider, ActiveToolCall, Usage 
 
 /** A structured event emitted through a RequestHandle stream */
 export type StreamEvent =
-  | { type: 'text',        agentId: string, content: string }
-  | { type: 'thinking',    agentId: string, content: string }
-  | { type: 'tool_call',   agentId: string, name: string, args: Record<string, unknown> }
-  | { type: 'tool_result', agentId: string, name: string, result: string }
+  | { type: 'text',        activationId: string, agentId: string, content: string }
+  | { type: 'thinking',    activationId: string, agentId: string, content: string }
+  | { type: 'tool_call',   activationId: string, agentId: string, name: string, args: Record<string, unknown> }
+  | { type: 'tool_result', activationId: string, agentId: string, name: string, result: string }
 
 /** The full result of a completed request */
 export type RequestResult = {
+  /** The activation ID that scopes this entire causal chain */
+  activationId: string
   /** Final text output from the root agent (convenience) */
   response: string
   /** Full ordered list of all events in the chain */
@@ -65,6 +67,8 @@ export type PendingReplyMap = Map<string, PendingReply>
 /** A message routed through the Keryx message bus */
 export type Message = {
   id: string
+  /** Causal chain ID — all messages in the same activation share this */
+  activationId: string
   to: string
   from: string | null
   body: string

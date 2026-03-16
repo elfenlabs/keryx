@@ -178,6 +178,7 @@ export class ProcessManager {
     // Enqueue the destroy message
     const msg: Message = {
       id: crypto.randomUUID(),
+      activationId: crypto.randomUUID(),
       to: agentId,
       from: 'system',
       body: `Destroy agent "${agentId}"`,
@@ -294,11 +295,13 @@ export class ProcessManager {
     // Create the send_message and ask_agent tools for this activation
     const sendMessageTool = createSendMessageTool({
       fromAgentId: agentId,
+      activationId: msg.activationId,
       inbox: this.inbox,
     })
 
     const askAgentTool = createAskAgentTool({
       fromAgentId: agentId,
+      activationId: msg.activationId,
       inbox: this.inbox,
       registry: this.registry,
       pendingReplies: this.pendingReplies,
@@ -409,7 +412,7 @@ export class ProcessManager {
           this.daemons.runOnAgentStream({ agentId, type: 'thinking', phase: 'chunk', chunk })
           const pending = this.pendingReplies.get(msg.id)
           if (pending?.pushEvent) {
-            pending.pushEvent({ type: 'thinking', agentId, content: chunk })
+            pending.pushEvent({ type: 'thinking', activationId: msg.activationId, agentId, content: chunk })
           }
         },
         onThinkingEnd: () => {
@@ -423,7 +426,7 @@ export class ProcessManager {
           // Pipe structured event to pending reply stream
           const pending = this.pendingReplies.get(msg.id)
           if (pending?.pushEvent) {
-            pending.pushEvent({ type: 'text', agentId, content: chunk })
+            pending.pushEvent({ type: 'text', activationId: msg.activationId, agentId, content: chunk })
           }
         },
         onOutputEnd: () => {
@@ -445,14 +448,14 @@ export class ProcessManager {
           await this.daemons.runOnBeforeToolCall({ agentId, toolId: tool.id, args })
           const pending = this.pendingReplies.get(msg.id)
           if (pending?.pushEvent) {
-            pending.pushEvent({ type: 'tool_call', agentId, name: tool.id, args })
+            pending.pushEvent({ type: 'tool_call', activationId: msg.activationId, agentId, name: tool.id, args })
           }
         },
         onAfterToolCall: async (tool, args, result) => {
           await this.daemons.runOnAfterToolCall({ agentId, toolId: tool.id, args, result })
           const pending = this.pendingReplies.get(msg.id)
           if (pending?.pushEvent) {
-            pending.pushEvent({ type: 'tool_result', agentId, name: tool.id, result: String(result) })
+            pending.pushEvent({ type: 'tool_result', activationId: msg.activationId, agentId, name: tool.id, result: String(result) })
           }
         },
       })
@@ -481,6 +484,7 @@ export class ProcessManager {
         if (msg.from && this.registry.has(msg.from)) {
           this.inbox.enqueue({
             id: crypto.randomUUID(),
+            activationId: msg.activationId,
             to: msg.from,
             from: 'system',
             body: `Message to "${msg.to}" failed: ${error.message}`,
