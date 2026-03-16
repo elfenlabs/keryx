@@ -13,6 +13,7 @@ import type {
   Attachment,
   KeryxInstance,
   Message,
+  StreamEvent,
   ActivationContext,
   AfterActivationContext,
   PendingReplyMap,
@@ -389,6 +390,7 @@ export class ProcessManager {
     let response: string | null = null
     let error: Error | null = null
     let steps = 0
+    let agentUsage: import('@elfenlabs/nous').Usage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 }
 
     try {
       // Store active message for observability
@@ -405,6 +407,10 @@ export class ProcessManager {
         },
         onThinking: (chunk) => {
           this.daemons.runOnAgentStream({ agentId, type: 'thinking', phase: 'chunk', chunk })
+          const pending = this.pendingReplies.get(msg.id)
+          if (pending?.pushEvent) {
+            pending.pushEvent({ type: 'thinking', agentId, content: chunk })
+          }
         },
         onThinkingEnd: () => {
           this.daemons.runOnAgentStream({ agentId, type: 'thinking', phase: 'end' })
@@ -414,10 +420,10 @@ export class ProcessManager {
         },
         onOutput: (chunk) => {
           this.daemons.runOnAgentStream({ agentId, type: 'output', phase: 'chunk', chunk })
-          // Pipe chunk to pending reply stream (if streaming)
+          // Pipe structured event to pending reply stream
           const pending = this.pendingReplies.get(msg.id)
-          if (pending?.pushChunk) {
-            pending.pushChunk(chunk)
+          if (pending?.pushEvent) {
+            pending.pushEvent({ type: 'text', agentId, content: chunk })
           }
         },
         onOutputEnd: () => {
@@ -437,9 +443,17 @@ export class ProcessManager {
         },
         onBeforeToolCall: async (tool, args) => {
           await this.daemons.runOnBeforeToolCall({ agentId, toolId: tool.id, args })
+          const pending = this.pendingReplies.get(msg.id)
+          if (pending?.pushEvent) {
+            pending.pushEvent({ type: 'tool_call', agentId, name: tool.id, args })
+          }
         },
         onAfterToolCall: async (tool, args, result) => {
           await this.daemons.runOnAfterToolCall({ agentId, toolId: tool.id, args, result })
+          const pending = this.pendingReplies.get(msg.id)
+          if (pending?.pushEvent) {
+            pending.pushEvent({ type: 'tool_result', agentId, name: tool.id, result: String(result) })
+          }
         },
       })
 
@@ -453,6 +467,7 @@ export class ProcessManager {
 
       response = result.response
       steps = result.steps
+      agentUsage = result.usage
       msg.completedAt = new Date()
     } catch (err) {
       error = err instanceof Error ? err : new Error(String(err))
@@ -503,6 +518,10 @@ export class ProcessManager {
       const pending = this.pendingReplies.get(msg.id)
       if (pending) {
         this.pendingReplies.delete(msg.id)
+        // Store usage for RequestResult (if usageRef is present)
+        if (pending.usageRef) {
+          pending.usageRef.value = agentUsage
+        }
         if (error) {
           pending.errorStream?.(error)
           pending.reject?.(error)

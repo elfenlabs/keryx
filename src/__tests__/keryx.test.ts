@@ -11,7 +11,7 @@
 import { describe, test, expect, mock, beforeEach } from 'bun:test'
 import { createKeryx } from '../keryx.js'
 import { createTool } from '@elfenlabs/nous'
-import type { KeryxInstance, AgentDefinition, DaemonDefinition } from '../types.js'
+import type { KeryxInstance, AgentDefinition, DaemonDefinition, StreamEvent } from '../types.js'
 import type { Provider, GenerateResult, AgentConfig } from '@elfenlabs/nous'
 
 // ── Mock Infrastructure ─────────────────────────────────────────────────────
@@ -143,15 +143,17 @@ describe('Keryx Integration', () => {
       pollingInterval: 10,
       defaultProvider: {
         generate: async () => {
-          return { content: 'The answer is 42' }
+          return { content: 'The answer is 42', usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 } }
         },
       },
     })
 
     await kx.agents.spawn('responder', makeAgent('Responder'))
     kx.start()
-    const response = await kx.request({ to: 'responder', body: 'What is the answer?' })
-    expect(response).toBe('The answer is 42')
+    const result = await kx.request({ to: 'responder', body: 'What is the answer?' })
+    expect(result.response).toBe('The answer is 42')
+    expect(result.events).toBeDefined()
+    expect(result.usage.totalTokens).toBe(15)
 
     await kx.stop()
   })
@@ -1284,7 +1286,7 @@ describe('Keryx Integration', () => {
 
   // ─── Streaming RequestHandle ──────────────────────────────────────────
 
-  test('RequestHandle.stream yields chunks incrementally', async () => {
+  test('RequestHandle.stream yields StreamEvent objects incrementally', async () => {
     const kx = createKeryx({
       pollingInterval: 10,
       defaultProvider: {
@@ -1305,17 +1307,24 @@ describe('Keryx Integration', () => {
 
     const handle = kx.request({ to: 'streamer', body: 'Say hello' })
 
-    // Collect chunks from the stream
-    const receivedChunks: string[] = []
-    for await (const chunk of handle.stream) {
-      receivedChunks.push(chunk)
+    // Collect events from the stream
+    const receivedEvents: StreamEvent[] = []
+    for await (const event of handle.stream) {
+      receivedEvents.push(event)
     }
 
-    // Verify chunks arrived
-    expect(receivedChunks).toEqual(['Hello', ' ', 'world', '!'])
+    // Verify events arrived as StreamEvent objects with type 'text'
+    expect(receivedEvents.length).toBe(4)
+    for (const event of receivedEvents) {
+      expect(event.type).toBe('text')
+      expect(event.agentId).toBe('streamer')
+    }
+    expect(receivedEvents.map(e => (e as { content: string }).content)).toEqual(['Hello', ' ', 'world', '!'])
+
     // Verify result matches
-    const fullResponse = await handle.result
-    expect(fullResponse).toBe('Hello world!')
+    const fullResult = await handle.result
+    expect(fullResult.response).toBe('Hello world!')
+    expect(fullResult.events).toEqual(receivedEvents)
 
     await kx.stop()
   })
@@ -1379,7 +1388,9 @@ describe('Keryx Integration', () => {
 
     // Only await result — never consume .stream
     const result = await handle.result
-    expect(result).toBe('full response')
+    expect(result.response).toBe('full response')
+    expect(result.events.length).toBe(2)
+    expect(result.events[0]!.type).toBe('text')
 
     await kx.stop()
   })
@@ -1424,21 +1435,23 @@ describe('Keryx Integration', () => {
     await kx.stop()
   })
 
-  test('await kx.request() returns string (backward compat)', async () => {
+  test('await kx.request() returns RequestResult (breaking change)', async () => {
     const kx = createKeryx({
       pollingInterval: 10,
       defaultProvider: {
-        generate: async () => ({ content: 'hello' }),
+        generate: async () => ({ content: 'hello', usage: { promptTokens: 5, completionTokens: 3, totalTokens: 8 } }),
       },
     })
 
     await kx.agents.spawn('compat', makeAgent('Compat'))
     kx.start()
 
-    // Using await directly on the handle should return the string
+    // Using await directly on the handle returns RequestResult
     const result = await kx.request({ to: 'compat', body: 'test' })
-    expect(typeof result).toBe('string')
-    expect(result).toBe('hello')
+    expect(typeof result).toBe('object')
+    expect(result.response).toBe('hello')
+    expect(result.events).toBeDefined()
+    expect(result.usage.totalTokens).toBe(8)
 
     await kx.stop()
   })

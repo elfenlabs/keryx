@@ -88,25 +88,29 @@ export function createKeryx(config: KeryxConfig): KeryxInstance {
      * Request-reply: send a message and get a streaming handle.
      *
      * Returns a RequestHandle that supports both streaming and await:
-     * - `handle.stream` — async iterable of output chunks
-     * - `handle.result` — resolves to the complete response
+     * - `handle.stream` — async iterable of StreamEvent objects
+     * - `handle.result` — resolves to RequestResult when done
      * - `handle.abort()` — kills the agent's Nous loop
-     * - `await handle` — returns string (backward compat via .then())
+     * - `await handle` — returns RequestResult (via .then())
      */
     request(opts: RequestOptions): RequestHandle {
       const msgId = crypto.randomUUID()
       const agentId = opts.to
 
       // ── Stream infrastructure (async generator) ─────────────────────
-      // Buffer for chunks that arrive before the consumer starts iterating
-      let chunkBuffer: string[] = []
+      // Buffer for events that arrive before the consumer starts iterating
+      let eventBuffer: import('./types.js').StreamEvent[] = []
       let chunkResolve: (() => void) | null = null
       let streamDone = false
       let streamError: Error | null = null
 
-      function pushChunk(chunk: string): void {
+      // Accumulate all events for RequestResult
+      const allEvents: import('./types.js').StreamEvent[] = []
+
+      function pushEvent(event: import('./types.js').StreamEvent): void {
         if (streamDone) return
-        chunkBuffer.push(chunk)
+        allEvents.push(event)
+        eventBuffer.push(event)
         if (chunkResolve) {
           chunkResolve()
           chunkResolve = null
@@ -130,11 +134,11 @@ export function createKeryx(config: KeryxConfig): KeryxInstance {
         }
       }
 
-      async function* streamGenerator(): AsyncGenerator<string> {
+      async function* streamGenerator(): AsyncGenerator<import('./types.js').StreamEvent> {
         while (true) {
-          // Yield any buffered chunks
-          while (chunkBuffer.length > 0) {
-            yield chunkBuffer.shift()!
+          // Yield any buffered events
+          while (eventBuffer.length > 0) {
+            yield eventBuffer.shift()!
           }
 
           // If done, check for trailing error
@@ -143,20 +147,31 @@ export function createKeryx(config: KeryxConfig): KeryxInstance {
             return
           }
 
-          // Wait for next chunk or completion
+          // Wait for next event or completion
           await new Promise<void>(resolve => { chunkResolve = resolve })
         }
       }
 
+      // ── Usage ref (mutable — filled by process-manager) ────────────
+      const usageRef = { value: { promptTokens: 0, completionTokens: 0, totalTokens: 0 } }
+
       // ── Result promise ──────────────────────────────────────────────
-      const result = new Promise<string>((resolve, reject) => {
+      const result = new Promise<import('./types.js').RequestResult>((resolve, reject) => {
         // Register the pending reply with stream hooks
         pendingReplies.set(msgId, {
-          resolve,
+          resolve: (responseText: string) => {
+            // Build RequestResult from accumulated data
+            resolve({
+              response: responseText,
+              events: allEvents,
+              usage: usageRef.value,
+            })
+          },
           reject,
-          pushChunk,
+          pushEvent,
           closeStream,
           errorStream,
+          usageRef,
         })
 
         // Build and enqueue the message

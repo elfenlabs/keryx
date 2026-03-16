@@ -23,6 +23,8 @@ export { shelld } from './daemons/shelld.js'
 export type {
   Attachment,
   Message,
+  StreamEvent,
+  RequestResult,
   AgentDefinition,
   AgentInstance,
   DaemonDefinition,
@@ -50,5 +52,5 @@ export type { CronJob, CrondOptions } from './daemons/crond.js'
 export type { KeryxdConfig } from './daemons/keryxd.js'
 export type { ArtifactdOptions, ArtifactStorage, ArtifactMeta, ArtifactInfo } from './daemons/artifactd.js'
 export type { SecretdOptions, SecretConfig, SecretStorage } from './daemons/secretd.js'
-export type { StreamEvent, StreamSubscriber, StreamdHandle } from './daemons/streamd.js'
+export type { StreamEvent as StreamdEvent, StreamSubscriber, StreamdHandle } from './daemons/streamd.js'
 export type { ShelldOptions, ShelldConfig, ShellDriver, ShellProcess, ShelldHandle, ShellSession } from './daemons/shelld.js'

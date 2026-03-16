@@ -4,21 +4,40 @@
  * All shared type definitions for the orchestrator.
  */
 
-import type { Tool, Context, SerializedContext, Provider, ActiveToolCall } from '@elfenlabs/nous'
+import type { Tool, Context, SerializedContext, Provider, ActiveToolCall, Usage } from '@elfenlabs/nous'
+
+// ── Stream Events ───────────────────────────────────────────────────────────
+
+/** A structured event emitted through a RequestHandle stream */
+export type StreamEvent =
+  | { type: 'text',        agentId: string, content: string }
+  | { type: 'thinking',    agentId: string, content: string }
+  | { type: 'tool_call',   agentId: string, name: string, args: Record<string, unknown> }
+  | { type: 'tool_result', agentId: string, name: string, result: string }
+
+/** The full result of a completed request */
+export type RequestResult = {
+  /** Final text output from the root agent (convenience) */
+  response: string
+  /** Full ordered list of all events in the chain */
+  events: StreamEvent[]
+  /** Aggregated token usage */
+  usage: Usage
+}
 
 // ── Pending Replies ─────────────────────────────────────────────────────────
 
 /** Handle returned by kx.request() — supports both streaming and await */
 export type RequestHandle = {
-  /** Async iterable of output chunks (text deltas) */
-  stream: AsyncIterable<string>
-  /** Resolves to the complete response string when done */
-  result: Promise<string>
+  /** Async iterable of structured stream events */
+  stream: AsyncGenerator<StreamEvent>
+  /** Resolves to the full RequestResult when done */
+  result: Promise<RequestResult>
   /** Abort the request (kills the agent's Nous loop) */
   abort: () => void
-  /** Thenable — makes `await kx.request(...)` return string */
-  then: <T1 = string, T2 = never>(
-    onfulfilled?: ((value: string) => T1 | PromiseLike<T1>) | null,
+  /** Thenable — makes `await kx.request(...)` return RequestResult */
+  then: <T1 = RequestResult, T2 = never>(
+    onfulfilled?: ((value: RequestResult) => T1 | PromiseLike<T1>) | null,
     onrejected?: ((reason: unknown) => T2 | PromiseLike<T2>) | null,
   ) => Promise<T1 | T2>
 }
@@ -28,12 +47,14 @@ export type PendingReply = {
   resolve: (response: string) => void
   reject?: (error: Error) => void
   timer?: ReturnType<typeof setTimeout>
-  /** Push a chunk to the stream (if streaming is active) */
-  pushChunk?: (chunk: string) => void
+  /** Push a structured event to the stream */
+  pushEvent?: (event: StreamEvent) => void
   /** Close the stream (called when response is complete) */
   closeStream?: () => void
   /** Error the stream (called on failure) */
   errorStream?: (error: Error) => void
+  /** Mutable ref for process-manager to store usage */
+  usageRef?: { value: Usage }
 }
 
 /** Map of pending replies keyed by message ID */
