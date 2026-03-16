@@ -60,12 +60,12 @@ kx.start()
 await kx.send({ to: 'analyst-1', body: 'Analyze AAPL' })
 
 // 7. Request-reply (simple await)
-const response = await kx.request({ to: 'analyst-1', body: 'Status report?' })
+const { response } = await kx.request({ to: 'analyst-1', body: 'Status report?' })
 
 // 8. Request-reply with streaming
 const handle = kx.request({ to: 'analyst-1', body: 'Deep analysis of AAPL' })
-for await (const chunk of handle.stream) {
-  process.stdout.write(chunk)
+for await (const event of handle.stream) {
+  if (event.type === 'text') process.stdout.write(event.content)
 }
 ```
 
@@ -97,19 +97,45 @@ Request-reply with streaming support. Returns a `RequestHandle`:
 
 | Property | Type | Description |
 |---|---|---|
-| `stream` | `AsyncIterable<string>` | Real-time output chunks |
-| `result` | `Promise<string>` | Resolves to the complete response |
+| `stream` | `AsyncGenerator<StreamEvent>` | Structured stream events (text, thinking, tool calls) |
+| `result` | `Promise<RequestResult>` | Resolves to the full result with events and usage |
 | `abort()` | `() => void` | Kills the agent's Nous loop |
-| `then()` | thenable | Makes `await kx.request(...)` return `string` directly |
+| `then()` | thenable | Makes `await kx.request(...)` return `RequestResult` |
+
+**`StreamEvent`** is a discriminated union:
 
 ```typescript
-// Simple await (backward-compatible)
-const response = await kx.request({ to: 'agent-1', body: 'Hello' })
+type StreamEvent =
+  | { type: 'text',        activationId: string, agentId: string, content: string }
+  | { type: 'thinking',    activationId: string, agentId: string, content: string }
+  | { type: 'tool_call',   activationId: string, agentId: string, name: string, args: Record<string, unknown> }
+  | { type: 'tool_result', activationId: string, agentId: string, name: string, result: string }
+```
 
-// Streaming
+**`RequestResult`** contains the full run output:
+
+```typescript
+type RequestResult = {
+  activationId: string    // root activation ID for the entire causal chain
+  response: string        // final text output from the agent
+  events: StreamEvent[]   // full ordered list of all events
+  usage: Usage            // aggregated token usage
+}
+```
+
+```typescript
+// Simple await
+const { response, usage } = await kx.request({ to: 'agent-1', body: 'Hello' })
+
+// Streaming with event type filtering
 const handle = kx.request({ to: 'agent-1', body: 'Hello' })
-for await (const chunk of handle.stream) {
-  process.stdout.write(chunk)
+for await (const event of handle.stream) {
+  switch (event.type) {
+    case 'text':        process.stdout.write(event.content); break
+    case 'thinking':    /* reasoning tokens */                break
+    case 'tool_call':   /* tool invocation */                 break
+    case 'tool_result': /* tool output */                     break
+  }
 }
 
 // With abort
@@ -194,6 +220,24 @@ agent_destroy({ id: 'aapl-analyst' })
 
 > [!WARNING]
 > **Deadlock risk**: If Agent A `agent_ask`s Agent B while Agent B `agent_ask`s Agent A, both will wait forever. Avoid circular request chains. Default timeout: 120 seconds.
+
+## Activation ID
+
+Every message in Keryx carries an **`activationId`** — a causal chain identifier that scopes all events triggered by a single root action. When `kx.send()` or `kx.request()` creates a message, it assigns a unique `activationId`. All downstream messages created via `agent_ask` or `message_send` inherit the same `activationId`.
+
+```
+[activationId: abc-123]
+  → agent-a processes message
+    → agent_ask to agent-b     (same activationId)
+      → agent-b processes      (same activationId)
+    → message_send to agent-c  (same activationId)
+      → agent-c processes      (same activationId)
+```
+
+This enables:
+- **Cost accounting**: Token usage per activation across all agents in the chain
+- **Distributed tracing**: Full event traces scoped to a single user action
+- **Scoped subscriptions**: Filter `streamd` events by `activationId`
 
 ## Daemons
 
