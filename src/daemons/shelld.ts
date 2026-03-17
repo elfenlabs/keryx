@@ -179,6 +179,10 @@ export function shelld(opts: ShelldOptions): ShelldHandle {
 
   const daemon: DaemonDefinition = {
     id: 'shelld',
+    capabilities: {
+      writes: ['activation:before'],
+      description: 'Provides shell execution tools to agents',
+    },
 
     onStart: (kx: KeryxInstance) => {
       kx.bus.on('activation:before', (ctx) => {

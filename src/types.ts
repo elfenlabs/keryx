@@ -227,9 +227,23 @@ export type KeryxEventMap = {
   'agent:destroy':       AgentDestroyContext
 }
 
+/** Capability manifest — what events a daemon can access */
+export type DaemonCapabilities = {
+  /** Events this daemon observes (receives frozen/read-only payload) */
+  reads?: (keyof KeryxEventMap)[]
+  /** Events this daemon mutates (receives full mutable payload) */
+  writes?: (keyof KeryxEventMap)[]
+  /** Events this daemon emits on the bus */
+  emits?: (keyof KeryxEventMap)[]
+  /** Human-readable description */
+  description?: string
+}
+
 /** A daemon (background service) registered with Keryx */
 export type DaemonDefinition = {
   id: string
+  /** Declared capabilities — enforced at runtime. No declaration = no access. */
+  capabilities: DaemonCapabilities
   onStart?: (kx: KeryxInstance) => void | Promise<void>
   onStop?: () => void | Promise<void>
 }
@@ -279,7 +293,7 @@ export type KeryxInstance = {
   daemons: {
     register: (daemon: DaemonDefinition) => Promise<void>
     deregister: (id: string) => Promise<void>
-    list: () => { id: string }[]
+    list: () => { id: string; capabilities: DaemonCapabilities }[]
   }
   /** Agent lifecycle and observability */
   agents: {

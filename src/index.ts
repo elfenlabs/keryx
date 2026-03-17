@@ -11,6 +11,7 @@ export { createKeryx } from './keryx.js'
 
 // Re-export Agora for daemon convenience
 export { Agora, AgoraGroup } from '@elfenlabs/agora'
+export { ScopedBus } from './scoped-bus.js'
 
 // Built-in daemons
 export { loggerd } from './daemons/loggerd.js'
@@ -31,6 +32,7 @@ export type {
   AgentDefinition,
   AgentInstance,
   DaemonDefinition,
+  DaemonCapabilities,
   KeryxEventMap,
   MessageContext,
   ActivationContext,

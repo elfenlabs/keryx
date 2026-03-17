@@ -339,6 +339,10 @@ export function artifactd(opts?: ArtifactdOptions): DaemonDefinition {
 
   return {
     id: 'artifactd',
+    capabilities: {
+      writes: ['activation:before'],
+      description: 'Provides shared artifact management tools to agents',
+    },
 
     onStart: (kx: KeryxInstance) => {
       storage.init()

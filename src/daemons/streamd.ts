@@ -67,6 +67,10 @@ export function streamd(): StreamdHandle {
 
   const daemon: DaemonDefinition = {
     id: 'streamd',
+    capabilities: {
+      reads: ['agent:stream'],
+      description: 'Broadcasts agent stream events to external subscribers',
+    },
 
     onStart: (kx: KeryxInstance) => {
       kx.bus.on('agent:stream', (ctx) => {

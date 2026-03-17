@@ -48,6 +48,9 @@ export function crond(opts: CrondOptions): DaemonDefinition {
 
   return {
     id: 'crond',
+    capabilities: {
+      description: 'Schedules periodic messages to agents',
+    },
 
     onStart: (kx: KeryxInstance) => {
       for (const job of opts.jobs) {

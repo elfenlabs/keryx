@@ -81,6 +81,11 @@ export function loggerd(opts?: LoggerdOptions): DaemonDefinition {
 
   return {
     id: 'loggerd',
+    capabilities: {
+      reads: ['message:received', 'activation:before', 'activation:after',
+              'tool:before', 'tool:after', 'agent:stream'],
+      description: 'Logs agent activity to the console',
+    },
 
     onStart: (kx: KeryxInstance) => {
       // ── message:received ───────────────────────────────────────────

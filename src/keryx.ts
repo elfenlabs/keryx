@@ -21,6 +21,7 @@ import type {
 } from './types.js'
 import type { Tool } from '@elfenlabs/nous'
 import { Agora, AgoraGroup } from '@elfenlabs/agora'
+import { ScopedBus } from './scoped-bus.js'
 import { Inbox } from './inbox.js'
 import { Registry } from './registry.js'
 import { ProcessManager } from './process-manager.js'
@@ -277,10 +278,23 @@ export function createKeryx(config: KeryxConfig): KeryxInstance {
 
         // Store definition and create a fresh listener group
         daemonDefs.set(daemon.id, daemon)
-        daemonGroups.set(daemon.id, bus.group(daemon.id))
+        const group = bus.group(daemon.id)
+        daemonGroups.set(daemon.id, group)
 
-        // Start the daemon — it subscribes via kx.bus in onStart
-        if (daemon.onStart) await daemon.onStart(instance)
+        // Start the daemon with a scoped bus that enforces capabilities
+        if (daemon.onStart) {
+          const caps = daemon.capabilities
+          const scopedBus = new ScopedBus<KeryxEventMap>(
+            group,
+            daemon.id,
+            caps.reads ?? [],
+            caps.writes ?? [],
+            caps.emits ?? [],
+            bus,
+          )
+          const scopedInstance = { ...instance, bus: scopedBus as any }
+          await daemon.onStart(scopedInstance)
+        }
       },
       async deregister(id: string): Promise<void> {
         const removed = daemonDefs.get(id)
@@ -289,8 +303,11 @@ export function createKeryx(config: KeryxConfig): KeryxInstance {
         daemonDefs.delete(id)
         daemonGroups.delete(id)
       },
-      list(): { id: string }[] {
-        return [...daemonDefs.keys()].map(id => ({ id }))
+      list() {
+        return [...daemonDefs.values()].map(d => ({
+          id: d.id,
+          capabilities: d.capabilities,
+        }))
       },
     },
 

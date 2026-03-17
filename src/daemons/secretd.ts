@@ -225,6 +225,10 @@ export function secretd(opts: SecretdOptions): DaemonDefinition {
 
   return {
     id: 'secretd',
+    capabilities: {
+      writes: ['activation:before', 'tool:before'],
+      description: 'Manages secrets substitution in tool arguments and prompts',
+    },
 
     onStart: (kx: KeryxInstance) => {
       // If storage supports initialization (e.g., EncryptedFileSecretStorage.load)

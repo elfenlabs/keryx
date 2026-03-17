@@ -55,6 +55,10 @@ export function contextd(opts?: ContextdOptions): DaemonDefinition {
 
   return {
     id: 'context',
+    capabilities: {
+      writes: ['activation:before', 'activation:after'],
+      description: 'Persists and restores agent conversation context across activations',
+    },
 
     onStart: (kx: KeryxInstance) => {
       kx.bus.on('activation:before', (ctx) => {
