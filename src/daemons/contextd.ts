@@ -6,7 +6,7 @@
  */
 
 import type { SerializedContext } from '@elfenlabs/nous'
-import type { DaemonDefinition } from '../types.js'
+import type { DaemonDefinition, KeryxInstance } from '../types.js'
 
 /** Storage adapter interface for context persistence */
 export interface ContextStorage {
@@ -55,29 +55,30 @@ export function contextd(opts?: ContextdOptions): DaemonDefinition {
 
   return {
     id: 'context',
-    order: 5, // Before most daemons, after loggerd
 
-    onBeforeActivation: (ctx) => {
-      const config = ctx.agentConfig['context'] as { persist?: boolean } | undefined
-      if (!config?.persist) return
+    onStart: (kx: KeryxInstance) => {
+      kx.bus.on('activation:before', (ctx) => {
+        const config = ctx.agentConfig['context'] as { persist?: boolean } | undefined
+        if (!config?.persist) return
 
-      const saved = storage.get(ctx.agentId)
-      if (saved) {
-        // Restore saved messages into the fresh context
-        for (const msg of saved.messages) {
-          ctx.ctx.push(msg)
+        const saved = storage.get(ctx.agentId)
+        if (saved) {
+          // Restore saved messages into the fresh context
+          for (const msg of saved.messages) {
+            ctx.ctx.push(msg)
+          }
         }
-      }
-    },
+      }, 5)
 
-    onAfterActivation: (ctx) => {
-      const config = ctx.agentConfig['context'] as { persist?: boolean } | undefined
-      if (!config?.persist) return
+      kx.bus.on('activation:after', (ctx) => {
+        const config = ctx.agentConfig['context'] as { persist?: boolean } | undefined
+        if (!config?.persist) return
 
-      // Only persist on successful activations
-      if (!ctx.error) {
-        storage.set(ctx.agentId, ctx.ctx.serialize())
-      }
+        // Only persist on successful activations
+        if (!ctx.error) {
+          storage.set(ctx.agentId, ctx.ctx.serialize())
+        }
+      }, 5)
     },
   }
 }

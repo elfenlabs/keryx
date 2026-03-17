@@ -12,7 +12,7 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { createTool } from '@elfenlabs/nous'
-import type { DaemonDefinition } from '../types.js'
+import type { DaemonDefinition, KeryxInstance } from '../types.js'
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -331,16 +331,7 @@ export class FilesystemArtifactStorage implements ArtifactStorage {
  *
  * @example
  * ```ts
- * const kx = createKeryx({
- *   daemons: [artifactd({ root: './artifacts' })],
- *   agents: [
- *     {
- *       id: 'analyst',
- *       name: 'Analyst',
- *       instruction: 'You analyze data.',
- *     },
- *   ],
- * })
+ * await kx.daemons.register(artifactd({ root: './artifacts' }))
  * ```
  */
 export function artifactd(opts?: ArtifactdOptions): DaemonDefinition {
@@ -348,236 +339,235 @@ export function artifactd(opts?: ArtifactdOptions): DaemonDefinition {
 
   return {
     id: 'artifactd',
-    order: 10, // After contextd (5), before application daemons
 
-    onStart: () => {
+    onStart: (kx: KeryxInstance) => {
       storage.init()
-    },
 
-    onBeforeActivation: (ctx) => {
-      const agentId = ctx.agentId
+      kx.bus.on('activation:before', (ctx) => {
+        const agentId = ctx.agentId
 
-      ctx.addTools([
-        // ── Read operations (unrestricted) ──────────────────────────────
+        ctx.addTools([
+          // ── Read operations (unrestricted) ──────────────────────────────
 
-        createTool({
-          id: 'artifact_read',
-          description:
-            'Read the content of an artifact. Returns the text body. Use startLine/endLine to read a specific range.',
-          schema: {
-            id: { type: 'string', description: 'Artifact path (e.g., "analysis/sentiment")' },
-            startLine: { type: 'number', description: 'Start line (1-indexed)', required: false },
-            endLine: { type: 'number', description: 'End line (inclusive)', required: false },
-          },
-          execute: async (args: { id: string; startLine?: number; endLine?: number }) => {
-            const result = storage.read(args.id)
-            if (!result) return `Error: Artifact "${args.id}" not found.`
-
-            let content = result.content
-            if (args.startLine || args.endLine) {
-              const lines = content.split('\n')
-              const start = (args.startLine ?? 1) - 1
-              const end = args.endLine ?? lines.length
-              content = lines.slice(start, end).join('\n')
-            }
-
-            return content
-          },
-        }),
-
-        createTool({
-          id: 'artifact_search',
-          description:
-            'Search for a text pattern within an artifact. Returns matching lines with line numbers. Capped at 50 results.',
-          schema: {
-            id: { type: 'string', description: 'Artifact path' },
-            pattern: { type: 'string', description: 'Text pattern to search for' },
-          },
-          execute: async (args: { id: string; pattern: string }) => {
-            const result = storage.read(args.id)
-            if (!result) return `Error: Artifact "${args.id}" not found.`
-
-            const lines = result.content.split('\n')
-            const matches: { line: number; content: string }[] = []
-
-            for (let i = 0; i < lines.length && matches.length < 50; i++) {
-              if (lines[i]!.includes(args.pattern)) {
-                matches.push({ line: i + 1, content: lines[i]! })
-              }
-            }
-
-            if (matches.length === 0) {
-              return `No matches found for "${args.pattern}" in "${args.id}".`
-            }
-
-            return JSON.stringify(matches)
-          },
-        }),
-
-        createTool({
-          id: 'artifact_list',
-          description:
-            'List artifacts matching a glob pattern. Use "path/*" for direct children or "path/**" for all descendants.',
-          schema: {
-            glob: {
-              type: 'string',
-              description: 'Glob pattern (e.g., "analysis/*", "agents/me/**")',
+          createTool({
+            id: 'artifact_read',
+            description:
+              'Read the content of an artifact. Returns the text body. Use startLine/endLine to read a specific range.',
+            schema: {
+              id: { type: 'string', description: 'Artifact path (e.g., "analysis/sentiment")' },
+              startLine: { type: 'number', description: 'Start line (1-indexed)', required: false },
+              endLine: { type: 'number', description: 'End line (inclusive)', required: false },
             },
-          },
-          execute: async (args: { glob: string }) => {
-            const items = storage.list(args.glob)
-            if (items.length === 0) {
-              return `No artifacts found matching "${args.glob}".`
-            }
-            return JSON.stringify(items)
-          },
-        }),
+            execute: async (args: { id: string; startLine?: number; endLine?: number }) => {
+              const result = storage.read(args.id)
+              if (!result) return `Error: Artifact "${args.id}" not found.`
 
-        // ── Write operations (ownership-enforced) ───────────────────────
+              let content = result.content
+              if (args.startLine || args.endLine) {
+                const lines = content.split('\n')
+                const start = (args.startLine ?? 1) - 1
+                const end = args.endLine ?? lines.length
+                content = lines.slice(start, end).join('\n')
+              }
 
-        createTool({
-          id: 'artifact_create',
-          description:
-            'Create a new artifact. You become the owner. Parent directories are created automatically.',
-          schema: {
-            id: { type: 'string', description: 'Artifact path (e.g., "analysis/sentiment")' },
-            content: { type: 'string', description: 'Initial content' },
-          },
-          execute: async (args: { id: string; content: string }) => {
-            if (storage.exists(args.id)) {
-              return `Error: Artifact "${args.id}" already exists.`
-            }
-            storage.create(args.id, args.content, agentId)
-            return `Created artifact "${args.id}".`
-          },
-        }),
+              return content
+            },
+          }),
 
-        createTool({
-          id: 'artifact_replace',
-          description:
-            'Find and replace exact text within an artifact you own. Errors if multiple matches found (use allowMultiple to override). Use startLine/endLine to narrow the search.',
-          schema: {
-            id: { type: 'string', description: 'Artifact path' },
-            target: { type: 'string', description: 'Exact text to find' },
-            replacement: { type: 'string', description: 'Text to replace with' },
-            startLine: { type: 'number', description: 'Narrow search start (1-indexed)', required: false },
-            endLine: { type: 'number', description: 'Narrow search end (inclusive)', required: false },
-            allowMultiple: { type: 'boolean', description: 'If true, replace all matches', required: false },
-          },
-          execute: async (args: {
-            id: string
-            target: string
-            replacement: string
-            startLine?: number
-            endLine?: number
-            allowMultiple?: boolean
-          }) => {
-            const result = storage.read(args.id)
-            if (!result) return `Error: Artifact "${args.id}" not found.`
-            if (result.meta.owner !== agentId) {
-              return `Error: Not owner of "${args.id}" (owner: ${result.meta.owner}).`
-            }
+          createTool({
+            id: 'artifact_search',
+            description:
+              'Search for a text pattern within an artifact. Returns matching lines with line numbers. Capped at 50 results.',
+            schema: {
+              id: { type: 'string', description: 'Artifact path' },
+              pattern: { type: 'string', description: 'Text pattern to search for' },
+            },
+            execute: async (args: { id: string; pattern: string }) => {
+              const result = storage.read(args.id)
+              if (!result) return `Error: Artifact "${args.id}" not found.`
 
-            const lines = result.content.split('\n')
-            const searchStart = (args.startLine ?? 1) - 1
-            const searchEnd = args.endLine ?? lines.length
+              const lines = result.content.split('\n')
+              const matches: { line: number; content: string }[] = []
 
-            // Find all occurrences within the search range
-            const matchLines: number[] = []
-            const searchRegion = lines.slice(searchStart, searchEnd).join('\n')
-            let idx = 0
-            while (idx < searchRegion.length) {
-              const found = searchRegion.indexOf(args.target, idx)
-              if (found === -1) break
+              for (let i = 0; i < lines.length && matches.length < 50; i++) {
+                if (lines[i]!.includes(args.pattern)) {
+                  matches.push({ line: i + 1, content: lines[i]! })
+                }
+              }
 
-              // Calculate line number of this match
-              const linesBeforeMatch = searchRegion.slice(0, found).split('\n').length
-              matchLines.push(searchStart + linesBeforeMatch)
-              idx = found + args.target.length
-            }
+              if (matches.length === 0) {
+                return `No matches found for "${args.pattern}" in "${args.id}".`
+              }
 
-            if (matchLines.length === 0) {
-              return `Error: Target not found in artifact "${args.id}".`
-            }
+              return JSON.stringify(matches)
+            },
+          }),
 
-            if (matchLines.length > 1 && !args.allowMultiple) {
-              return `Error: Ambiguous: found ${matchLines.length} matches at lines [${matchLines.join(', ')}]. Use allowMultiple or narrow with startLine/endLine.`
-            }
+          createTool({
+            id: 'artifact_list',
+            description:
+              'List artifacts matching a glob pattern. Use "path/*" for direct children or "path/**" for all descendants.',
+            schema: {
+              glob: {
+                type: 'string',
+                description: 'Glob pattern (e.g., "analysis/*", "agents/me/**")',
+              },
+            },
+            execute: async (args: { glob: string }) => {
+              const items = storage.list(args.glob)
+              if (items.length === 0) {
+                return `No artifacts found matching "${args.glob}".`
+              }
+              return JSON.stringify(items)
+            },
+          }),
 
-            // Perform replacement on the search region
-            const before = lines.slice(0, searchStart).join('\n')
-            const region = lines.slice(searchStart, searchEnd).join('\n')
-            const after = lines.slice(searchEnd).join('\n')
+          // ── Write operations (ownership-enforced) ───────────────────────
 
-            const replaced = args.allowMultiple
-              ? region.replaceAll(args.target, args.replacement)
-              : region.replace(args.target, args.replacement)
+          createTool({
+            id: 'artifact_create',
+            description:
+              'Create a new artifact. You become the owner. Parent directories are created automatically.',
+            schema: {
+              id: { type: 'string', description: 'Artifact path (e.g., "analysis/sentiment")' },
+              content: { type: 'string', description: 'Initial content' },
+            },
+            execute: async (args: { id: string; content: string }) => {
+              if (storage.exists(args.id)) {
+                return `Error: Artifact "${args.id}" already exists.`
+              }
+              storage.create(args.id, args.content, agentId)
+              return `Created artifact "${args.id}".`
+            },
+          }),
 
-            const parts = [before, replaced, after].filter(p => p !== '')
-            const newContent = parts.join('\n')
-
-            storage.write(args.id, newContent, result.meta)
-            const count = args.allowMultiple ? matchLines.length : 1
-            return `Replaced ${count} occurrence(s) in "${args.id}".`
-          },
-        }),
-
-        createTool({
-          id: 'artifact_append',
-          description: 'Append content to the end of an artifact you own.',
-          schema: {
-            id: { type: 'string', description: 'Artifact path' },
-            content: { type: 'string', description: 'Content to append' },
-          },
-          execute: async (args: { id: string; content: string }) => {
-            const result = storage.read(args.id)
-            if (!result) return `Error: Artifact "${args.id}" not found.`
-            if (result.meta.owner !== agentId) {
-              return `Error: Not owner of "${args.id}" (owner: ${result.meta.owner}).`
-            }
-
-            const newContent = result.content.endsWith('\n')
-              ? result.content + args.content
-              : result.content + '\n' + args.content
-
-            storage.write(args.id, newContent, result.meta)
-            return `Appended to "${args.id}".`
-          },
-        }),
-
-        createTool({
-          id: 'artifact_delete',
-          description:
-            'Delete an artifact or folder you own. Folder deletion is cascading (removes all children).',
-          schema: {
-            id: { type: 'string', description: 'Artifact or folder path' },
-          },
-          execute: async (args: { id: string }) => {
-            // Try as artifact first
-            if (storage.exists(args.id)) {
+          createTool({
+            id: 'artifact_replace',
+            description:
+              'Find and replace exact text within an artifact you own. Errors if multiple matches found (use allowMultiple to override). Use startLine/endLine to narrow the search.',
+            schema: {
+              id: { type: 'string', description: 'Artifact path' },
+              target: { type: 'string', description: 'Exact text to find' },
+              replacement: { type: 'string', description: 'Text to replace with' },
+              startLine: { type: 'number', description: 'Narrow search start (1-indexed)', required: false },
+              endLine: { type: 'number', description: 'Narrow search end (inclusive)', required: false },
+              allowMultiple: { type: 'boolean', description: 'If true, replace all matches', required: false },
+            },
+            execute: async (args: {
+              id: string
+              target: string
+              replacement: string
+              startLine?: number
+              endLine?: number
+              allowMultiple?: boolean
+            }) => {
               const result = storage.read(args.id)
               if (!result) return `Error: Artifact "${args.id}" not found.`
               if (result.meta.owner !== agentId) {
                 return `Error: Not owner of "${args.id}" (owner: ${result.meta.owner}).`
               }
-              storage.delete(args.id)
-              return `Deleted artifact "${args.id}".`
-            }
 
-            // Try as directory
-            if (storage.existsDir(args.id)) {
-              const folderOwner = storage.getFolderOwner(args.id)
-              if (folderOwner && folderOwner !== agentId) {
-                return `Error: Not owner of folder "${args.id}" (owner: ${folderOwner}).`
+              const lines = result.content.split('\n')
+              const searchStart = (args.startLine ?? 1) - 1
+              const searchEnd = args.endLine ?? lines.length
+
+              // Find all occurrences within the search range
+              const matchLines: number[] = []
+              const searchRegion = lines.slice(searchStart, searchEnd).join('\n')
+              let idx = 0
+              while (idx < searchRegion.length) {
+                const found = searchRegion.indexOf(args.target, idx)
+                if (found === -1) break
+
+                // Calculate line number of this match
+                const linesBeforeMatch = searchRegion.slice(0, found).split('\n').length
+                matchLines.push(searchStart + linesBeforeMatch)
+                idx = found + args.target.length
               }
-              const count = storage.deleteDir(args.id)
-              return `Deleted folder "${args.id}" (${count} artifact(s) removed).`
-            }
 
-            return `Error: Artifact or folder "${args.id}" not found.`
-          },
-        }),
-      ])
+              if (matchLines.length === 0) {
+                return `Error: Target not found in artifact "${args.id}".`
+              }
+
+              if (matchLines.length > 1 && !args.allowMultiple) {
+                return `Error: Ambiguous: found ${matchLines.length} matches at lines [${matchLines.join(', ')}]. Use allowMultiple or narrow with startLine/endLine.`
+              }
+
+              // Perform replacement on the search region
+              const before = lines.slice(0, searchStart).join('\n')
+              const region = lines.slice(searchStart, searchEnd).join('\n')
+              const after = lines.slice(searchEnd).join('\n')
+
+              const replaced = args.allowMultiple
+                ? region.replaceAll(args.target, args.replacement)
+                : region.replace(args.target, args.replacement)
+
+              const parts = [before, replaced, after].filter(p => p !== '')
+              const newContent = parts.join('\n')
+
+              storage.write(args.id, newContent, result.meta)
+              const count = args.allowMultiple ? matchLines.length : 1
+              return `Replaced ${count} occurrence(s) in "${args.id}".`
+            },
+          }),
+
+          createTool({
+            id: 'artifact_append',
+            description: 'Append content to the end of an artifact you own.',
+            schema: {
+              id: { type: 'string', description: 'Artifact path' },
+              content: { type: 'string', description: 'Content to append' },
+            },
+            execute: async (args: { id: string; content: string }) => {
+              const result = storage.read(args.id)
+              if (!result) return `Error: Artifact "${args.id}" not found.`
+              if (result.meta.owner !== agentId) {
+                return `Error: Not owner of "${args.id}" (owner: ${result.meta.owner}).`
+              }
+
+              const newContent = result.content.endsWith('\n')
+                ? result.content + args.content
+                : result.content + '\n' + args.content
+
+              storage.write(args.id, newContent, result.meta)
+              return `Appended to "${args.id}".`
+            },
+          }),
+
+          createTool({
+            id: 'artifact_delete',
+            description:
+              'Delete an artifact or folder you own. Folder deletion is cascading (removes all children).',
+            schema: {
+              id: { type: 'string', description: 'Artifact or folder path' },
+            },
+            execute: async (args: { id: string }) => {
+              // Try as artifact first
+              if (storage.exists(args.id)) {
+                const result = storage.read(args.id)
+                if (!result) return `Error: Artifact "${args.id}" not found.`
+                if (result.meta.owner !== agentId) {
+                  return `Error: Not owner of "${args.id}" (owner: ${result.meta.owner}).`
+                }
+                storage.delete(args.id)
+                return `Deleted artifact "${args.id}".`
+              }
+
+              // Try as directory
+              if (storage.existsDir(args.id)) {
+                const folderOwner = storage.getFolderOwner(args.id)
+                if (folderOwner && folderOwner !== agentId) {
+                  return `Error: Not owner of folder "${args.id}" (owner: ${folderOwner}).`
+                }
+                const count = storage.deleteDir(args.id)
+                return `Deleted folder "${args.id}" (${count} artifact(s) removed).`
+              }
+
+              return `Error: Artifact or folder "${args.id}" not found.`
+            },
+          }),
+        ])
+      }, 10)
     },
   }
 }

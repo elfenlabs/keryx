@@ -168,38 +168,44 @@ describe('FilesystemArtifactStorage', () => {
 
 // ── Tool Tests (via daemon) ─────────────────────────────────────────────────
 
+import { Agora } from '@elfenlabs/agora'
+import type { KeryxEventMap, KeryxInstance } from '../../types.js'
+
+/** Extract tools from the daemon by simulating onStart + activation:before via Agora */
+async function getTools(agentId: string, root: string) {
+  const daemon = artifactd({ root })
+  const bus = new Agora<KeryxEventMap>()
+  const tools: any[] = []
+
+  // Simulate KeryxInstance with a real Agora bus
+  const mockKx = { bus } as unknown as KeryxInstance
+
+  // Call onStart — daemon subscribes to activation:before on the bus
+  if (daemon.onStart) {
+    await daemon.onStart(mockKx)
+  }
+
+  // Emit activation:before to collect tools
+  await bus.emit('activation:before', {
+    agentId,
+    agentConfig: {},
+    message: {} as any,
+    ctx: { push: () => {} } as any,
+    addTools: (t: any[]) => tools.push(...t),
+    addPromptSegment: () => {},
+  })
+
+  return tools
+}
+
+
+function findTool(tools: any[], id: string) {
+  return tools.find((t: any) => t.id === id)
+}
+
 describe('artifactd tools', () => {
-  /** Extract tools from the daemon by simulating onBeforeActivation */
-  function getTools(agentId: string, root: string) {
-    const daemon = artifactd({ root })
-    const tools: any[] = []
-
-    // Call onStart to init storage
-    if (daemon.onStart) {
-      daemon.onStart({} as any)
-    }
-
-    // Simulate onBeforeActivation to collect tools
-    if (daemon.onBeforeActivation) {
-      daemon.onBeforeActivation({
-        agentId,
-        agentConfig: {},
-        message: {} as any,
-        ctx: { push: () => {} } as any,
-        addTools: (t: any[]) => tools.push(...t),
-        addPromptSegment: () => {},
-      })
-    }
-
-    return tools
-  }
-
-  function findTool(tools: any[], id: string) {
-    return tools.find((t: any) => t.id === id)
-  }
-
-  test('provisions all 7 tools', () => {
-    const tools = getTools('agent-1', tmpDir)
+  test('provisions all 7 tools', async () => {
+    const tools = await getTools('agent-1', tmpDir)
     expect(tools).toHaveLength(7)
 
     const ids = tools.map((t: any) => t.id).sort()
@@ -215,7 +221,7 @@ describe('artifactd tools', () => {
   })
 
   test('artifact_create + artifact_read', async () => {
-    const tools = getTools('agent-1', tmpDir)
+    const tools = await getTools('agent-1', tmpDir)
     const create = findTool(tools, 'artifact_create')
     const read = findTool(tools, 'artifact_read')
 
@@ -227,7 +233,7 @@ describe('artifactd tools', () => {
   })
 
   test('artifact_create errors on duplicate', async () => {
-    const tools = getTools('agent-1', tmpDir)
+    const tools = await getTools('agent-1', tmpDir)
     const create = findTool(tools, 'artifact_create')
 
     await create.execute({ id: 'dupe', content: 'First' })
@@ -237,7 +243,7 @@ describe('artifactd tools', () => {
   })
 
   test('artifact_read with line range', async () => {
-    const tools = getTools('agent-1', tmpDir)
+    const tools = await getTools('agent-1', tmpDir)
     const create = findTool(tools, 'artifact_create')
     const read = findTool(tools, 'artifact_read')
 
@@ -248,7 +254,7 @@ describe('artifactd tools', () => {
   })
 
   test('artifact_search finds matches', async () => {
-    const tools = getTools('agent-1', tmpDir)
+    const tools = await getTools('agent-1', tmpDir)
     const create = findTool(tools, 'artifact_create')
     const search = findTool(tools, 'artifact_search')
 
@@ -265,7 +271,7 @@ describe('artifactd tools', () => {
   })
 
   test('artifact_list finds artifacts by glob', async () => {
-    const tools = getTools('agent-1', tmpDir)
+    const tools = await getTools('agent-1', tmpDir)
     const create = findTool(tools, 'artifact_create')
     const list = findTool(tools, 'artifact_list')
 
@@ -279,7 +285,7 @@ describe('artifactd tools', () => {
   })
 
   test('artifact_replace: single match', async () => {
-    const tools = getTools('agent-1', tmpDir)
+    const tools = await getTools('agent-1', tmpDir)
     const create = findTool(tools, 'artifact_create')
     const replace = findTool(tools, 'artifact_replace')
     const read = findTool(tools, 'artifact_read')
@@ -298,7 +304,7 @@ describe('artifactd tools', () => {
   })
 
   test('artifact_replace: errors on multiple matches by default', async () => {
-    const tools = getTools('agent-1', tmpDir)
+    const tools = await getTools('agent-1', tmpDir)
     const create = findTool(tools, 'artifact_create')
     const replace = findTool(tools, 'artifact_replace')
 
@@ -315,7 +321,7 @@ describe('artifactd tools', () => {
   })
 
   test('artifact_replace: allowMultiple replaces all', async () => {
-    const tools = getTools('agent-1', tmpDir)
+    const tools = await getTools('agent-1', tmpDir)
     const create = findTool(tools, 'artifact_create')
     const replace = findTool(tools, 'artifact_replace')
     const read = findTool(tools, 'artifact_read')
@@ -335,7 +341,7 @@ describe('artifactd tools', () => {
   })
 
   test('artifact_replace: narrowed with startLine/endLine', async () => {
-    const tools = getTools('agent-1', tmpDir)
+    const tools = await getTools('agent-1', tmpDir)
     const create = findTool(tools, 'artifact_create')
     const replace = findTool(tools, 'artifact_replace')
     const read = findTool(tools, 'artifact_read')
@@ -362,12 +368,12 @@ describe('artifactd tools', () => {
 
   test('artifact_replace: errors when not owner', async () => {
     // Agent 1 creates the artifact
-    const tools1 = getTools('agent-1', tmpDir)
+    const tools1 = await getTools('agent-1', tmpDir)
     const create = findTool(tools1, 'artifact_create')
     await create.execute({ id: 'owned', content: 'Original content' })
 
     // Agent 2 tries to replace
-    const tools2 = getTools('agent-2', tmpDir)
+    const tools2 = await getTools('agent-2', tmpDir)
     const replace = findTool(tools2, 'artifact_replace')
     const result = await replace.execute({
       id: 'owned',
@@ -379,7 +385,7 @@ describe('artifactd tools', () => {
   })
 
   test('artifact_append: adds content', async () => {
-    const tools = getTools('agent-1', tmpDir)
+    const tools = await getTools('agent-1', tmpDir)
     const create = findTool(tools, 'artifact_create')
     const append = findTool(tools, 'artifact_append')
     const read = findTool(tools, 'artifact_read')
@@ -393,11 +399,11 @@ describe('artifactd tools', () => {
   })
 
   test('artifact_append: errors when not owner', async () => {
-    const tools1 = getTools('agent-1', tmpDir)
+    const tools1 = await getTools('agent-1', tmpDir)
     const create = findTool(tools1, 'artifact_create')
     await create.execute({ id: 'private-log', content: 'My log' })
 
-    const tools2 = getTools('agent-2', tmpDir)
+    const tools2 = await getTools('agent-2', tmpDir)
     const append = findTool(tools2, 'artifact_append')
     const result = await append.execute({ id: 'private-log', content: 'Intruder!' })
     expect(result).toContain('Error')
@@ -405,7 +411,7 @@ describe('artifactd tools', () => {
   })
 
   test('artifact_delete: owner can delete', async () => {
-    const tools = getTools('agent-1', tmpDir)
+    const tools = await getTools('agent-1', tmpDir)
     const create = findTool(tools, 'artifact_create')
     const del = findTool(tools, 'artifact_delete')
     const read = findTool(tools, 'artifact_read')
@@ -419,11 +425,11 @@ describe('artifactd tools', () => {
   })
 
   test('artifact_delete: non-owner cannot delete', async () => {
-    const tools1 = getTools('agent-1', tmpDir)
+    const tools1 = await getTools('agent-1', tmpDir)
     const create = findTool(tools1, 'artifact_create')
     await create.execute({ id: 'protected', content: 'Protected' })
 
-    const tools2 = getTools('agent-2', tmpDir)
+    const tools2 = await getTools('agent-2', tmpDir)
     const del = findTool(tools2, 'artifact_delete')
     const result = await del.execute({ id: 'protected' })
     expect(result).toContain('Error')
@@ -431,13 +437,13 @@ describe('artifactd tools', () => {
   })
 
   test('artifact_delete: folder owner can cascade delete', async () => {
-    const tools1 = getTools('manager', tmpDir)
+    const tools1 = await getTools('manager', tmpDir)
     const create1 = findTool(tools1, 'artifact_create')
     // Manager creates brief — becomes folder owner
     await create1.execute({ id: 'analysis/brief', content: 'Brief' })
 
     // Specialist creates their own artifact in the folder
-    const tools2 = getTools('specialist', tmpDir)
+    const tools2 = await getTools('specialist', tmpDir)
     const create2 = findTool(tools2, 'artifact_create')
     await create2.execute({ id: 'analysis/sentiment', content: 'Sentiment' })
 
@@ -450,12 +456,12 @@ describe('artifactd tools', () => {
 
   test('cross-agent read: any agent can read any artifact', async () => {
     // Agent 1 creates
-    const tools1 = getTools('author', tmpDir)
+    const tools1 = await getTools('author', tmpDir)
     const create = findTool(tools1, 'artifact_create')
     await create.execute({ id: 'public/doc', content: 'Shared knowledge' })
 
     // Agent 2 reads
-    const tools2 = getTools('reader', tmpDir)
+    const tools2 = await getTools('reader', tmpDir)
     const read = findTool(tools2, 'artifact_read')
     const content = await read.execute({ id: 'public/doc' })
     expect(content).toBe('Shared knowledge')

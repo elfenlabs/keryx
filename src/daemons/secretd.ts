@@ -6,12 +6,12 @@
  *
  * Secrets are never exposed to the agent — only symbolic handles
  * are shown. Substitution happens at the middleware layer during
- * onBeforeToolCall, scoped to allowed tools per secret.
+ * tool:before, scoped to allowed tools per secret.
  */
 
 import * as crypto from 'node:crypto'
 import * as fs from 'node:fs'
-import type { DaemonDefinition } from '../types.js'
+import type { DaemonDefinition, KeryxInstance } from '../types.js'
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -183,27 +183,22 @@ export function substituteSecrets(
  *
  * @example
  * ```ts
- * const kx = createKeryx({
- *   daemons: [
- *     secretd({
- *       storage: new InMemorySecretStorage({
- *         OPENAI_API_KEY: 'sk-abc123...',
- *         GITHUB_TOKEN: 'ghp_xyz...',
- *       }),
- *       secrets: {
- *         OPENAI_API_KEY: {
- *           grants: ['analyst', 'writer'],
- *           allowedTools: ['http_request'],
- *         },
- *         GITHUB_TOKEN: {
- *           grants: ['*'],
- *           allowedTools: ['github_api'],
- *         },
- *       },
- *     }),
- *   ],
- *   agents: [...],
- * })
+ * await kx.daemons.register(secretd({
+ *   storage: new InMemorySecretStorage({
+ *     OPENAI_API_KEY: 'sk-abc123...',
+ *     GITHUB_TOKEN: 'ghp_xyz...',
+ *   }),
+ *   secrets: {
+ *     OPENAI_API_KEY: {
+ *       grants: ['analyst', 'writer'],
+ *       allowedTools: ['http_request'],
+ *     },
+ *     GITHUB_TOKEN: {
+ *       grants: ['*'],
+ *       allowedTools: ['github_api'],
+ *     },
+ *   },
+ * }))
  * ```
  */
 export function secretd(opts: SecretdOptions): DaemonDefinition {
@@ -230,9 +225,8 @@ export function secretd(opts: SecretdOptions): DaemonDefinition {
 
   return {
     id: 'secretd',
-    order: 3, // Before contextd (5) — substitution must happen early
 
-    onStart: () => {
+    onStart: (kx: KeryxInstance) => {
       // If storage supports initialization (e.g., EncryptedFileSecretStorage.load)
       if ('load' in storage && typeof (storage as any).load === 'function') {
         (storage as any).load()
@@ -244,50 +238,50 @@ export function secretd(opts: SecretdOptions): DaemonDefinition {
           throw new Error(`secretd: Secret "${secretId}" is configured but not found in storage`)
         }
       }
-    },
 
-    onBeforeActivation: (ctx) => {
-      const granted = getGrantedSecrets(ctx.agentId)
-      if (granted.length === 0) return
+      kx.bus.on('activation:before', (ctx) => {
+        const granted = getGrantedSecrets(ctx.agentId)
+        if (granted.length === 0) return
 
-      const secretList = granted.map(id => `\${SECRET:${id}}`).join(', ')
-      ctx.addPromptSegment(
-        `[secretd] Available secrets (use in tool arguments, auto-resolved): ${secretList}`,
-      )
-    },
+        const secretList = granted.map(id => `\${SECRET:${id}}`).join(', ')
+        ctx.addPromptSegment(
+          `[secretd] Available secrets (use in tool arguments, auto-resolved): ${secretList}`,
+        )
+      }, 3)
 
-    onBeforeToolCall: (ctx) => {
-      const agentId = ctx.agentId
-      const toolId = ctx.toolId
+      kx.bus.on('tool:before', (ctx) => {
+        const agentId = ctx.agentId
+        const toolId = ctx.toolId
 
-      // Resolve function: checks ACL + tool allowlist, fails loud on unknown
-      const resolve = (secretId: string): string => {
-        // Check if secret exists in storage
-        const value = storage.get(secretId)
-        if (value === undefined) {
-          const available = getGrantedSecrets(agentId)
-          throw new Error(
-            `secretd: Unknown secret "${secretId}". Available secrets: ${available.join(', ') || '(none)'}`,
-          )
+        // Resolve function: checks ACL + tool allowlist, fails loud on unknown
+        const resolve = (secretId: string): string => {
+          // Check if secret exists in storage
+          const value = storage.get(secretId)
+          if (value === undefined) {
+            const available = getGrantedSecrets(agentId)
+            throw new Error(
+              `secretd: Unknown secret "${secretId}". Available secrets: ${available.join(', ') || '(none)'}`,
+            )
+          }
+
+          // Check ACL
+          if (!hasGrant(secretId, agentId)) {
+            throw new Error(`secretd: Agent "${agentId}" does not have access to secret "${secretId}"`)
+          }
+
+          // Check tool allowlist
+          if (!isToolAllowed(secretId, toolId)) {
+            throw new Error(
+              `secretd: Secret "${secretId}" cannot be used in tool "${toolId}". Allowed tools: ${secretConfigs[secretId]!.allowedTools.join(', ')}`,
+            )
+          }
+
+          return value
         }
 
-        // Check ACL
-        if (!hasGrant(secretId, agentId)) {
-          throw new Error(`secretd: Agent "${agentId}" does not have access to secret "${secretId}"`)
-        }
-
-        // Check tool allowlist
-        if (!isToolAllowed(secretId, toolId)) {
-          throw new Error(
-            `secretd: Secret "${secretId}" cannot be used in tool "${toolId}". Allowed tools: ${secretConfigs[secretId]!.allowedTools.join(', ')}`,
-          )
-        }
-
-        return value
-      }
-
-      // Deep-substitute all ${SECRET:*} patterns in args
-      substituteSecrets(ctx.args, resolve)
+        // Deep-substitute all ${SECRET:*} patterns in args
+        substituteSecrets(ctx.args, resolve)
+      }, 3)
     },
 
     onStop: () => {

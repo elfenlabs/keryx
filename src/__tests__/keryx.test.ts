@@ -306,18 +306,20 @@ describe('Keryx Integration', () => {
 
     const daemon1: DaemonDefinition = {
       id: 'first',
-      order: 1,
-      onMessageReceived: () => { hookLog.push('first:onMessageReceived') },
-      onBeforeActivation: () => { hookLog.push('first:onBeforeActivation') },
-      onAfterActivation: () => { hookLog.push('first:onAfterActivation') },
+      onStart: (kx) => {
+        kx.bus.on('message:received', () => { hookLog.push('first:message:received') }, 1)
+        kx.bus.on('activation:before', () => { hookLog.push('first:activation:before') }, 1)
+        kx.bus.on('activation:after', () => { hookLog.push('first:activation:after') }, 1)
+      },
     }
 
     const daemon2: DaemonDefinition = {
       id: 'second',
-      order: 2,
-      onMessageReceived: () => { hookLog.push('second:onMessageReceived') },
-      onBeforeActivation: () => { hookLog.push('second:onBeforeActivation') },
-      onAfterActivation: () => { hookLog.push('second:onAfterActivation') },
+      onStart: (kx) => {
+        kx.bus.on('message:received', () => { hookLog.push('second:message:received') }, 2)
+        kx.bus.on('activation:before', () => { hookLog.push('second:activation:before') }, 2)
+        kx.bus.on('activation:after', () => { hookLog.push('second:activation:after') }, 2)
+      },
     }
 
     const kx = createKeryx({
@@ -327,7 +329,7 @@ describe('Keryx Integration', () => {
       },
     })
 
-    // Register deliberately out of order — manager sorts by order
+    // Register deliberately out of order — listeners sorted by order arg
     await kx.daemons.register(daemon2)
     await kx.daemons.register(daemon1)
 
@@ -338,31 +340,32 @@ describe('Keryx Integration', () => {
 
     // Hooks should fire in order (1 before 2)
     expect(hookLog).toEqual([
-      'first:onMessageReceived',
-      'second:onMessageReceived',
-      'first:onBeforeActivation',
-      'second:onBeforeActivation',
-      'first:onAfterActivation',
-      'second:onAfterActivation',
+      'first:message:received',
+      'second:message:received',
+      'first:activation:before',
+      'second:activation:before',
+      'first:activation:after',
+      'second:activation:after',
     ])
 
     await kx.stop()
   })
 
-  test('daemon can inject tools via onBeforeActivation', async () => {
+  test('daemon can inject tools via activation:before', async () => {
     let capturedTools: any[] = []
 
     const daemon: DaemonDefinition = {
       id: 'tool-injector',
-      order: 10,
-      onBeforeActivation: (ctx) => {
-        ctx.addTools([
-          createTool({
-            id: 'custom_tool',
-            description: 'A daemon-injected tool',
-            execute: async () => 'custom result',
-          }),
-        ])
+      onStart: (kx) => {
+        kx.bus.on('activation:before', (ctx) => {
+          ctx.addTools([
+            createTool({
+              id: 'custom_tool',
+              description: 'A daemon-injected tool',
+              execute: async () => 'custom result',
+            }),
+          ])
+        })
       },
     }
 
@@ -395,9 +398,10 @@ describe('Keryx Integration', () => {
 
     const daemon: DaemonDefinition = {
       id: 'prompt-injector',
-      order: 10,
-      onBeforeActivation: (ctx) => {
-        ctx.addPromptSegment('You have access to the Thesauros knowledge graph.')
+      onStart: (kx) => {
+        kx.bus.on('activation:before', (ctx) => {
+          ctx.addPromptSegment('You have access to the Thesauros knowledge graph.')
+        })
       },
     }
 
@@ -434,18 +438,17 @@ describe('Keryx Integration', () => {
 
     expect(kx.daemons.list()).toEqual([])
 
-    await kx.daemons.register({ id: 'test-daemon', order: 5 })
-    expect(kx.daemons.list()).toEqual([{ id: 'test-daemon', order: 5 }])
+    await kx.daemons.register({ id: 'test-daemon' })
+    expect(kx.daemons.list()).toEqual([{ id: 'test-daemon' }])
 
-    await kx.daemons.register({ id: 'another', order: 1 })
-    // Should be sorted by order
+    await kx.daemons.register({ id: 'another' })
     expect(kx.daemons.list()).toEqual([
-      { id: 'another', order: 1 },
-      { id: 'test-daemon', order: 5 },
+      { id: 'test-daemon' },
+      { id: 'another' },
     ])
 
     await kx.daemons.deregister('test-daemon')
-    expect(kx.daemons.list()).toEqual([{ id: 'another', order: 1 }])
+    expect(kx.daemons.list()).toEqual([{ id: 'another' }])
   })
 
   test('register() always calls onStart', async () => {
@@ -457,7 +460,6 @@ describe('Keryx Integration', () => {
 
     await kx.daemons.register({
       id: 'my-daemon',
-      order: 10,
       onStart: () => { hookLog.push('started') },
       onStop: () => { hookLog.push('stopped') },
     })
@@ -479,7 +481,6 @@ describe('Keryx Integration', () => {
 
     await kx.daemons.register({
       id: 'will-remove',
-      order: 10,
       onStart: () => { hookLog.push('started') },
       onStop: () => { hookLog.push('stopped') },
     })
@@ -503,7 +504,6 @@ describe('Keryx Integration', () => {
 
     await kx.daemons.register({
       id: 'hot-reload',
-      order: 10,
       onStart: () => { hookLog.push('v1:started') },
       onStop: () => { hookLog.push('v1:stopped') },
     })
@@ -513,7 +513,6 @@ describe('Keryx Integration', () => {
     // Re-register with same ID → hot-reload
     await kx.daemons.register({
       id: 'hot-reload',
-      order: 10,
       onStart: () => { hookLog.push('v2:started') },
       onStop: () => { hookLog.push('v2:stopped') },
     })
@@ -604,16 +603,17 @@ describe('Keryx Integration', () => {
 
   // ─── PostActivation Context ───────────────────────────────────────────
 
-  test('onAfterActivation receives response and steps', async () => {
+  test('activation:after receives response and steps', async () => {
     let capturedResponse = ''
     let capturedSteps = 0
 
     const daemon: DaemonDefinition = {
       id: 'spy',
-      order: 0,
-      onAfterActivation: (ctx) => {
-        capturedResponse = ctx.response ?? ''
-        capturedSteps = ctx.steps
+      onStart: (kx) => {
+        kx.bus.on('activation:after', (ctx) => {
+          capturedResponse = ctx.response ?? ''
+          capturedSteps = ctx.steps
+        })
       },
     }
 
@@ -637,14 +637,15 @@ describe('Keryx Integration', () => {
     await kx.stop()
   })
 
-  test('onAfterActivation receives error on failure', async () => {
+  test('activation:after receives error on failure', async () => {
     let capturedError: Error | null = null
 
     const daemon: DaemonDefinition = {
       id: 'spy',
-      order: 0,
-      onAfterActivation: (ctx) => {
-        capturedError = ctx.error
+      onStart: (kx) => {
+        kx.bus.on('activation:after', (ctx) => {
+          capturedError = ctx.error
+        })
       },
     }
 
@@ -748,22 +749,23 @@ describe('Keryx Integration', () => {
     await kx.stop()
   })
 
-  test('onAgentSpawn hook fires and can inject tools', async () => {
+  test('agent:spawn hook fires and can inject tools', async () => {
     let spawnedId = ''
     let capturedTools: any[] = []
 
     const daemon: DaemonDefinition = {
       id: 'spawn-watcher',
-      order: 1,
-      onAgentSpawn: (ctx) => {
-        spawnedId = ctx.agentId
-        ctx.addTools([
-          createTool({
-            id: 'spawn_tool',
-            description: 'Injected at spawn time',
-            execute: async () => 'spawn result',
-          }),
-        ])
+      onStart: (kx) => {
+        kx.bus.on('agent:spawn', (ctx) => {
+          spawnedId = ctx.agentId
+          ctx.addTools([
+            createTool({
+              id: 'spawn_tool',
+              description: 'Injected at spawn time',
+              execute: async () => 'spawn result',
+            }),
+          ])
+        }, 1)
       },
     }
 
@@ -794,14 +796,15 @@ describe('Keryx Integration', () => {
     await kx.stop()
   })
 
-  test('onAgentDestroy hook fires on destroy', async () => {
+  test('agent:destroy hook fires on destroy', async () => {
     let destroyedId = ''
 
     const daemon: DaemonDefinition = {
       id: 'destroy-watcher',
-      order: 1,
-      onAgentDestroy: (ctx) => {
-        destroyedId = ctx.agentId
+      onStart: (kx) => {
+        kx.bus.on('agent:destroy', (ctx) => {
+          destroyedId = ctx.agentId
+        }, 1)
       },
     }
 
@@ -828,9 +831,10 @@ describe('Keryx Integration', () => {
 
     const daemon: DaemonDefinition = {
       id: 'prompt-spawner',
-      order: 1,
-      onAgentSpawn: (ctx) => {
-        ctx.addPromptSegment('You have vault access.')
+      onStart: (kx) => {
+        kx.bus.on('agent:spawn', (ctx) => {
+          ctx.addPromptSegment('You have vault access.')
+        }, 1)
       },
     }
 
@@ -1226,22 +1230,23 @@ describe('Keryx Integration', () => {
 
     const pdfDaemon: DaemonDefinition = {
       id: 'pdf-processor',
-      order: 10,
-      onBeforeActivation: (ctx) => {
-        const atts = (ctx.message.metadata?.attachments ?? []) as any[]
-        const remaining: any[] = []
-        for (const att of atts) {
-          if (att.mimeType === 'application/pdf') {
-            // Daemon handles PDF: extract text and push into context
-            ctx.ctx.push({ role: 'user', content: `[Extracted from ${att.filename}]: Lorem ipsum dolor sit amet...` })
-          } else {
-            remaining.push(att)
+      onStart: (kx) => {
+        kx.bus.on('activation:before', (ctx) => {
+          const atts = (ctx.message.metadata?.attachments ?? []) as any[]
+          const remaining: any[] = []
+          for (const att of atts) {
+            if (att.mimeType === 'application/pdf') {
+              // Daemon handles PDF: extract text and push into context
+              ctx.ctx.push({ role: 'user', content: `[Extracted from ${att.filename}]: Lorem ipsum dolor sit amet...` })
+            } else {
+              remaining.push(att)
+            }
           }
-        }
-        // Remove handled attachments so process-manager doesn't double-push
-        if (ctx.message.metadata) {
-          ctx.message.metadata.attachments = remaining
-        }
+          // Remove handled attachments so process-manager doesn't double-push
+          if (ctx.message.metadata) {
+            ctx.message.metadata.attachments = remaining
+          }
+        }, 10)
       },
     }
 

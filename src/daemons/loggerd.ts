@@ -8,7 +8,7 @@
  * colors and buffered thinking/output blocks.
  */
 
-import type { DaemonDefinition } from '../types.js'
+import type { DaemonDefinition, KeryxInstance } from '../types.js'
 
 // ── ANSI Color Palette ──────────────────────────────────────────────────────
 
@@ -67,27 +67,8 @@ export type LoggerdOptions = {
  *
  * @example
  * ```ts
- * const kx = createKeryx({
- *   daemons: [loggerd()],
- *   // ...\n * })
- * ```
- *
- * Default output:
- * ```
- * [summarizer] ← "Summarize this article..." (from: ext-abc123)
- * [summarizer] → "Here is the summary: ..." (steps: 2)
- * ```
- *
- * Verbose output:
- * ```
- * [analyst] recv:
- *   ← "Research NVDA news..." (from: assistant)
- * [analyst] thinking:
- *   maybe I should look at earnings too...
- * [analyst] tool_call:
- *   news_fetch({ ticker: "NVDA", days: 7 })
- * [analyst] done:
- *   → completed (steps: 3)
+ * await kx.daemons.register(loggerd())
+ * await kx.daemons.register(loggerd({ verbose: true }))
  * ```
  */
 export function loggerd(opts?: LoggerdOptions): DaemonDefinition {
@@ -100,42 +81,47 @@ export function loggerd(opts?: LoggerdOptions): DaemonDefinition {
 
   return {
     id: 'loggerd',
-    order: 0, // First in the chain
 
-    onMessageReceived: (ctx) => {
-      const from = ctx.message.from ?? 'external'
-      const body = truncate(ctx.message.body, 60)
-      const force = ctx.message.force ? ' [FORCE]' : ''
+    onStart: (kx: KeryxInstance) => {
+      // ── message:received ───────────────────────────────────────────
+      kx.bus.on('message:received', (ctx) => {
+        const from = ctx.message.from ?? 'external'
+        const body = truncate(ctx.message.body, 60)
+        const force = ctx.message.force ? ' [FORCE]' : ''
 
-      if (verbose) {
-        fmtVerbose(ctx.message.to, 'recv', `← "${body}" (from: ${from})${force}`, log)
-      } else {
-        log(`[${ctx.message.to}] ← "${body}" (from: ${from})${force}`)
-      }
-    },
-
-    onBeforeActivation: verbose
-      ? (ctx) => {
-          fmtVerbose(ctx.agentId, 'activate', `processing message from ${ctx.message.from ?? 'external'}`, log)
+        if (verbose) {
+          fmtVerbose(ctx.message.to, 'recv', `← "${body}" (from: ${from})${force}`, log)
+        } else {
+          log(`[${ctx.message.to}] ← "${body}" (from: ${from})${force}`)
         }
-      : undefined,
+      }, 0)
 
-    onBeforeToolCall: verbose
-      ? (ctx) => {
+      // ── activation:before (verbose only) ───────────────────────────
+      if (verbose) {
+        kx.bus.on('activation:before', (ctx) => {
+          fmtVerbose(ctx.agentId, 'activate', `processing message from ${ctx.message.from ?? 'external'}`, log)
+        }, 0)
+      }
+
+      // ── tool:before (verbose only) ─────────────────────────────────
+      if (verbose) {
+        kx.bus.on('tool:before', (ctx) => {
           const argsStr = truncate(JSON.stringify(ctx.args), 120)
           fmtVerbose(ctx.agentId, 'tool_call', `${ctx.toolId}(${argsStr})`, log)
-        }
-      : undefined,
+        }, 0)
+      }
 
-    onAfterToolCall: verbose
-      ? (ctx) => {
+      // ── tool:after (verbose only) ──────────────────────────────────
+      if (verbose) {
+        kx.bus.on('tool:after', (ctx) => {
           const resultStr = truncate(String(ctx.result), 200)
           fmtVerbose(ctx.agentId, 'tool_result', resultStr, log)
-        }
-      : undefined,
+        }, 0)
+      }
 
-    onAgentStream: verbose
-      ? (ctx) => {
+      // ── agent:stream (verbose only) ────────────────────────────────
+      if (verbose) {
+        kx.bus.on('agent:stream', (ctx) => {
           if (ctx.type === 'thinking') {
             if (ctx.phase === 'start') {
               thinkingBuffers.set(ctx.agentId, [])
@@ -165,27 +151,29 @@ export function loggerd(opts?: LoggerdOptions): DaemonDefinition {
               outputBuffers.delete(ctx.agentId)
             }
           }
-          // tool_call streaming is handled by onBeforeToolCall/onAfterToolCall
-        }
-      : undefined,
-
-    onAfterActivation: (ctx) => {
-      if (ctx.error) {
-        if (verbose) {
-          fmtVerbose(ctx.agentId, 'error', `✗ ${ctx.error.message}`, log)
-        } else {
-          log(`[${ctx.agentId}] ✗ ERROR: ${ctx.error.message}`)
-        }
-      } else {
-        const response = ctx.response ?? ''
-        const body = truncate(response, 60)
-
-        if (verbose) {
-          fmtVerbose(ctx.agentId, 'done', `→ "${body}" (steps: ${ctx.steps})`, log)
-        } else {
-          log(`[${ctx.agentId}] → "${body}" (steps: ${ctx.steps})`)
-        }
+          // tool_call streaming is handled by tool:before/tool:after
+        }, 0)
       }
+
+      // ── activation:after ───────────────────────────────────────────
+      kx.bus.on('activation:after', (ctx) => {
+        if (ctx.error) {
+          if (verbose) {
+            fmtVerbose(ctx.agentId, 'error', `✗ ${ctx.error.message}`, log)
+          } else {
+            log(`[${ctx.agentId}] ✗ ERROR: ${ctx.error.message}`)
+          }
+        } else {
+          const response = ctx.response ?? ''
+          const body = truncate(response, 60)
+
+          if (verbose) {
+            fmtVerbose(ctx.agentId, 'done', `→ "${body}" (steps: ${ctx.steps})`, log)
+          } else {
+            log(`[${ctx.agentId}] → "${body}" (steps: ${ctx.steps})`)
+          }
+        }
+      }, 0)
     },
   }
 }

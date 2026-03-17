@@ -6,7 +6,7 @@
  * and decide how to expose events (WebSocket, SSE, etc.).
  */
 
-import type { DaemonDefinition, AgentStreamContext } from '../types.js'
+import type { DaemonDefinition, AgentStreamContext, KeryxInstance } from '../types.js'
 
 /** A stream event emitted by streamd */
 export type StreamEvent = {
@@ -38,10 +38,7 @@ export type StreamdHandle = {
  * @example
  * ```ts
  * const stream = streamd()
- * const kx = createKeryx({
- *   daemons: [stream.daemon],
- *   // ...
- * })
+ * await kx.daemons.register(stream.daemon)
  *
  * // In user-space (e.g. WebSocket server):
  * const unsub = stream.subscribe((event) => {
@@ -70,10 +67,11 @@ export function streamd(): StreamdHandle {
 
   const daemon: DaemonDefinition = {
     id: 'streamd',
-    order: 0, // Early in the chain — observability first
 
-    onAgentStream: (ctx) => {
-      emit(ctx)
+    onStart: (kx: KeryxInstance) => {
+      kx.bus.on('agent:stream', (ctx) => {
+        emit(ctx)
+      }, 0) // Early — observability first
     },
   }
 

@@ -31,21 +31,16 @@ export type CrondOptions = {
  *
  * @example
  * ```ts
- * const kx = createKeryx({
- *   daemons: [
- *     crond({
- *       jobs: [
- *         {
- *           id: 'daily-report',
- *           to: 'analyst',
- *           body: 'Generate the daily market report.',
- *           intervalMs: 24 * 60 * 60 * 1000, // 24 hours
- *         },
- *       ],
- *     }),
+ * await kx.daemons.register(crond({
+ *   jobs: [
+ *     {
+ *       id: 'daily-report',
+ *       to: 'analyst',
+ *       body: 'Generate the daily market report.',
+ *       intervalMs: 24 * 60 * 60 * 1000, // 24 hours
+ *     },
  *   ],
- *   // ...
- * })
+ * }))
  * ```
  */
 export function crond(opts: CrondOptions): DaemonDefinition {
@@ -53,7 +48,6 @@ export function crond(opts: CrondOptions): DaemonDefinition {
 
   return {
     id: 'crond',
-    order: 90, // Late in the chain — most daemons should run before cron
 
     onStart: (kx: KeryxInstance) => {
       for (const job of opts.jobs) {

@@ -10,6 +10,7 @@ import type {
   AgentInstance,
   KeryxConfig,
   KeryxInstance,
+  KeryxEventMap,
   SendOptions,
   RequestOptions,
   RequestHandle,
@@ -19,9 +20,9 @@ import type {
   PendingReplyMap,
 } from './types.js'
 import type { Tool } from '@elfenlabs/nous'
+import { Agora, AgoraGroup } from '@elfenlabs/agora'
 import { Inbox } from './inbox.js'
 import { Registry } from './registry.js'
-import { DaemonManager } from './daemon.js'
 import { ProcessManager } from './process-manager.js'
 
 /**
@@ -45,16 +46,20 @@ import { ProcessManager } from './process-manager.js'
 export function createKeryx(config: KeryxConfig): KeryxInstance {
   const inbox = new Inbox()
   const registry = new Registry()
-  const daemonManager = new DaemonManager()
+  const bus: Agora<KeryxEventMap> = config.bus ?? new Agora<KeryxEventMap>()
   const pendingReplies: PendingReplyMap = new Map()
   const pollingInterval = config.pollingInterval ?? 100
   const definitions = config.definitions ?? {}
+
+  // Daemon registry — tracks definitions and their listener groups
+  const daemonDefs = new Map<string, DaemonDefinition>()
+  const daemonGroups = new Map<string, AgoraGroup<KeryxEventMap>>()
 
   // Create the process manager
   const pm = new ProcessManager({
     inbox,
     registry,
-    daemons: daemonManager,
+    bus,
     pendingReplies,
     pollingInterval,
     defaultProvider: config.defaultProvider,
@@ -64,6 +69,7 @@ export function createKeryx(config: KeryxConfig): KeryxInstance {
   // ── Public API ──────────────────────────────────────────────────────────
 
   const instance: KeryxInstance = {
+    bus,
     /** Fire-and-forget message delivery */
     async send(opts: SendOptions): Promise<void> {
       const msg = {
@@ -249,27 +255,42 @@ export function createKeryx(config: KeryxConfig): KeryxInstance {
     /** Stop daemon background processes and drain active work */
     async stop(): Promise<void> {
       // Stop daemon background processes (reverse order)
-      const defs = daemonManager.listDefinitions()
-      for (let i = defs.length - 1; i >= 0; i--) {
-        const d = defs[i]!
+      const ids = [...daemonDefs.keys()].reverse()
+      for (const id of ids) {
+        const d = daemonDefs.get(id)!
         if (d.onStop) await d.onStop()
+        daemonGroups.get(id)?.dispose()
       }
+      daemonDefs.clear()
+      daemonGroups.clear()
       await pm.stop()
     },
 
     daemons: {
       async register(daemon: DaemonDefinition): Promise<void> {
-        const replaced = daemonManager.register(daemon)
-        // Hot-reload: stop old, start new
-        if (replaced?.onStop) await replaced.onStop()
+        // Hot-reload: stop old daemon if re-registering same ID
+        const existing = daemonDefs.get(daemon.id)
+        if (existing) {
+          if (existing.onStop) await existing.onStop()
+          daemonGroups.get(daemon.id)?.dispose()
+        }
+
+        // Store definition and create a fresh listener group
+        daemonDefs.set(daemon.id, daemon)
+        daemonGroups.set(daemon.id, bus.group(daemon.id))
+
+        // Start the daemon — it subscribes via kx.bus in onStart
         if (daemon.onStart) await daemon.onStart(instance)
       },
       async deregister(id: string): Promise<void> {
-        const removed = daemonManager.deregister(id)
+        const removed = daemonDefs.get(id)
         if (removed?.onStop) await removed.onStop()
+        daemonGroups.get(id)?.dispose()
+        daemonDefs.delete(id)
+        daemonGroups.delete(id)
       },
-      list(): { id: string; order: number }[] {
-        return daemonManager.list()
+      list(): { id: string }[] {
+        return [...daemonDefs.keys()].map(id => ({ id }))
       },
     },
 
@@ -297,7 +318,7 @@ export function createKeryx(config: KeryxConfig): KeryxInstance {
         const spawnTools: Tool<any>[] = []
         const spawnPromptSegments: string[] = []
 
-        await daemonManager.runOnAgentSpawn({
+        await bus.emit('agent:spawn', {
           agentId: id,
           instance: agentInstance,
           addTools: (tools: Tool<any>[]) => {

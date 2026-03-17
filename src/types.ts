@@ -4,6 +4,7 @@
  * All shared type definitions for the orchestrator.
  */
 
+import type { Agora } from '@elfenlabs/agora'
 import type { Tool, Context, SerializedContext, Provider, ActiveToolCall, Usage } from '@elfenlabs/nous'
 
 // ── Stream Events ───────────────────────────────────────────────────────────
@@ -212,23 +213,25 @@ export type AgentDestroyContext = {
   instance: AgentInstance
 }
 
-/** A daemon (middleware service) registered with Keryx */
+// ── Event Map ───────────────────────────────────────────────────────────────
+
+/** Typed event map for the Keryx event bus (Agora) */
+export type KeryxEventMap = {
+  'message:received':    MessageContext
+  'activation:before':   ActivationContext
+  'activation:after':    AfterActivationContext
+  'tool:before':         BeforeToolCallContext
+  'tool:after':          AfterToolCallContext
+  'agent:stream':        AgentStreamContext
+  'agent:spawn':         AgentSpawnContext
+  'agent:destroy':       AgentDestroyContext
+}
+
+/** A daemon (background service) registered with Keryx */
 export type DaemonDefinition = {
   id: string
-  order: number
   onStart?: (kx: KeryxInstance) => void | Promise<void>
   onStop?: () => void | Promise<void>
-  onMessageReceived?: (ctx: MessageContext) => void | Promise<void>
-  onBeforeActivation?: (ctx: ActivationContext) => void | Promise<void>
-  onBeforeToolCall?: (ctx: BeforeToolCallContext) => void | Promise<void>
-  onAfterToolCall?: (ctx: AfterToolCallContext) => void | Promise<void>
-  onAfterActivation?: (ctx: AfterActivationContext) => void | Promise<void>
-  /** Synchronous streaming hook — must not block token flow */
-  onAgentStream?: (ctx: AgentStreamContext) => void
-  /** Called when an agent instance is spawned */
-  onAgentSpawn?: (ctx: AgentSpawnContext) => void | Promise<void>
-  /** Called when an agent instance is destroyed */
-  onAgentDestroy?: (ctx: AgentDestroyContext) => void | Promise<void>
 }
 
 // ── Keryx Configuration ─────────────────────────────────────────────────────
@@ -241,6 +244,8 @@ export type KeryxConfig = {
   pollingInterval?: number
   /** Default Nous provider used by all agents unless overridden. */
   defaultProvider: Provider
+  /** External Agora event bus. If omitted, Keryx creates one internally. */
+  bus?: Agora<KeryxEventMap>
 }
 
 /** Options for sending a message */
@@ -265,6 +270,8 @@ export type RequestOptions = {
 
 /** The public Keryx API surface */
 export type KeryxInstance = {
+  /** The Agora event bus — daemons subscribe here in onStart */
+  bus: Agora<KeryxEventMap>
   send: (opts: SendOptions) => Promise<void>
   request: (opts: RequestOptions) => RequestHandle
   start: () => void
@@ -272,7 +279,7 @@ export type KeryxInstance = {
   daemons: {
     register: (daemon: DaemonDefinition) => Promise<void>
     deregister: (id: string) => Promise<void>
-    list: () => { id: string; order: number }[]
+    list: () => { id: string }[]
   }
   /** Agent lifecycle and observability */
   agents: {

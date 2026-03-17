@@ -9,6 +9,9 @@
 // Public API
 export { createKeryx } from './keryx.js'
 
+// Re-export Agora for daemon convenience
+export { Agora, AgoraGroup } from '@elfenlabs/agora'
+
 // Built-in daemons
 export { loggerd } from './daemons/loggerd.js'
 export { contextd } from './daemons/contextd.js'
@@ -28,6 +31,7 @@ export type {
   AgentDefinition,
   AgentInstance,
   DaemonDefinition,
+  KeryxEventMap,
   MessageContext,
   ActivationContext,
   BeforeToolCallContext,

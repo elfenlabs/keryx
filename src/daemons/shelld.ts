@@ -133,15 +133,12 @@ function formatOutput(
  * @example
  * ```ts
  * const shell = shelld({ driver: myDockerDriver })
- * const kx = createKeryx({
- *   daemons: [shell.daemon],
- *   agents: [
- *     {
- *       id: 'coder',
- *       config: { 'shelld': { hosts: ['dev-box'] } },
- *       // ...
- *     },
- *   ],
+ * await kx.daemons.register(shell.daemon)
+ *
+ * const agent = await kx.agents.spawn('coder', {
+ *   name: 'Coder',
+ *   instruction: '...',
+ *   config: { 'shelld': { hosts: ['dev-box'] } },
  * })
  * ```
  */
@@ -182,10 +179,164 @@ export function shelld(opts: ShelldOptions): ShelldHandle {
 
   const daemon: DaemonDefinition = {
     id: 'shelld',
-    order: 50, // After core daemons, before low-priority ones
 
-    onStart: (_kx: KeryxInstance) => {
-      // No-op — connections are lazy (on first shell_exec)
+    onStart: (kx: KeryxInstance) => {
+      kx.bus.on('activation:before', (ctx) => {
+        const config = ctx.agentConfig['shelld'] as ShelldConfig | undefined
+        if (!config || !config.hosts || config.hosts.length === 0) return
+
+        const allowedHosts = config.hosts
+
+        ctx.addTools([
+          // ── shell_exec ──────────────────────────────────────────────────
+          createTool({
+            id: 'shell_exec',
+            description:
+              'Execute a shell command on a host. Returns a commandId for tracking. ' +
+              'Output is truncated for large results — use shell_output to paginate.',
+            schema: {
+              hostId: { type: 'string', description: 'Target host ID' },
+              command: { type: 'string', description: 'Shell command to execute' },
+              timeout: {
+                type: 'number',
+                description: 'Max ms to wait before returning (default: 5000). The command continues running if it exceeds this.',
+                required: false,
+              },
+            },
+            execute: async (args: { hostId: string; command: string; timeout?: number }) => {
+              if (!matchesGlob(args.hostId, allowedHosts)) {
+                return `Error: No access to host "${args.hostId}".`
+              }
+
+              const timeout = args.timeout ?? 5000
+              const commandId = crypto.randomUUID()
+
+              // Ensure host is connected
+              await ensureConnected(args.hostId)
+
+              // Spawn the process
+              const process = await driver.spawn(args.hostId, args.command)
+
+              const session: ShellSession = {
+                commandId,
+                hostId: args.hostId,
+                command: args.command,
+                status: 'running',
+                exitCode: null,
+                output: [],
+                totalBytes: 0,
+                process,
+                createdAt: new Date(),
+              }
+
+              sessions.set(commandId, session)
+
+              // Accumulate output
+              process.onData((chunk: string) => {
+                session.output.push(chunk)
+                session.totalBytes += chunk.length
+              })
+
+              // Track exit + resolve wait in a single callback
+              let resolveWait: (() => void) | null = null
+
+              process.onExit((exitCode: number) => {
+                session.status = 'done'
+                session.exitCode = exitCode
+                if (resolveWait) resolveWait()
+              })
+
+              // Wait up to timeout for completion
+              await new Promise<void>((resolve) => {
+                // Already done (instant process)
+                if (session.status === 'done') {
+                  resolve()
+                  return
+                }
+
+                resolveWait = () => {
+                  clearTimeout(timer)
+                  resolve()
+                }
+
+                const timer = setTimeout(() => {
+                  resolveWait = null
+                  resolve()
+                }, timeout)
+              })
+
+              return JSON.stringify({
+                commandId,
+                status: session.status,
+                exitCode: session.exitCode,
+                output: formatOutput(session.output, session.totalBytes, headChars, tailChars),
+              })
+            },
+          }),
+
+          // ── shell_output ────────────────────────────────────────────────
+          createTool({
+            id: 'shell_output',
+            description:
+              'Read output from a running or completed command. Use offset and length to paginate large outputs.',
+            schema: {
+              commandId: { type: 'string', description: 'Command ID from shell_exec' },
+              offset: {
+                type: 'number',
+                description: 'Character offset to start reading from (default: 0)',
+                required: false,
+              },
+              length: {
+                type: 'number',
+                description: 'Number of characters to read (default: 4000)',
+                required: false,
+              },
+            },
+            execute: async (args: { commandId: string; offset?: number; length?: number }) => {
+              const result = getSessionWithAccess(args.commandId, allowedHosts)
+              if (typeof result === 'string') return result
+
+              const session = result
+              const full = session.output.join('')
+              const offset = args.offset ?? 0
+              const length = args.length ?? 4000
+              const content = full.slice(offset, offset + length)
+
+              return JSON.stringify({
+                content,
+                offset,
+                length: content.length,
+                totalBytes: session.totalBytes,
+                status: session.status,
+                exitCode: session.exitCode,
+              })
+            },
+          }),
+
+          // ── shell_input ─────────────────────────────────────────────────
+          createTool({
+            id: 'shell_input',
+            description:
+              'Write to stdin of a running command. Use "\\x03" to send Ctrl+C (SIGINT).',
+            schema: {
+              commandId: { type: 'string', description: 'Command ID from shell_exec' },
+              input: { type: 'string', description: 'String to write to stdin' },
+            },
+            execute: async (args: { commandId: string; input: string }) => {
+              const result = getSessionWithAccess(args.commandId, allowedHosts)
+              if (typeof result === 'string') return result
+
+              const session = result
+              if (session.status === 'done') {
+                return `Error: Command "${args.commandId}" has already exited (code ${session.exitCode}).`
+              }
+
+              session.process.write(args.input)
+              return JSON.stringify({ ok: true })
+            },
+          }),
+        ])
+      }, 50)
     },
 
     onStop: async () => {
@@ -202,163 +353,6 @@ export function shelld(opts: ShelldOptions): ShelldHandle {
         await driver.disconnect(hostId)
       }
       connectedHosts.clear()
-    },
-
-    onBeforeActivation: (ctx) => {
-      const config = ctx.agentConfig['shelld'] as ShelldConfig | undefined
-      if (!config || !config.hosts || config.hosts.length === 0) return
-
-      const allowedHosts = config.hosts
-
-      ctx.addTools([
-        // ── shell_exec ──────────────────────────────────────────────────
-        createTool({
-          id: 'shell_exec',
-          description:
-            'Execute a shell command on a host. Returns a commandId for tracking. ' +
-            'Output is truncated for large results — use shell_output to paginate.',
-          schema: {
-            hostId: { type: 'string', description: 'Target host ID' },
-            command: { type: 'string', description: 'Shell command to execute' },
-            timeout: {
-              type: 'number',
-              description: 'Max ms to wait before returning (default: 5000). The command continues running if it exceeds this.',
-              required: false,
-            },
-          },
-          execute: async (args: { hostId: string; command: string; timeout?: number }) => {
-            if (!matchesGlob(args.hostId, allowedHosts)) {
-              return `Error: No access to host "${args.hostId}".`
-            }
-
-            const timeout = args.timeout ?? 5000
-            const commandId = crypto.randomUUID()
-
-            // Ensure host is connected
-            await ensureConnected(args.hostId)
-
-            // Spawn the process
-            const process = await driver.spawn(args.hostId, args.command)
-
-            const session: ShellSession = {
-              commandId,
-              hostId: args.hostId,
-              command: args.command,
-              status: 'running',
-              exitCode: null,
-              output: [],
-              totalBytes: 0,
-              process,
-              createdAt: new Date(),
-            }
-
-            sessions.set(commandId, session)
-
-            // Accumulate output
-            process.onData((chunk: string) => {
-              session.output.push(chunk)
-              session.totalBytes += chunk.length
-            })
-
-            // Track exit + resolve wait in a single callback
-            let resolveWait: (() => void) | null = null
-
-            process.onExit((exitCode: number) => {
-              session.status = 'done'
-              session.exitCode = exitCode
-              if (resolveWait) resolveWait()
-            })
-
-            // Wait up to timeout for completion
-            await new Promise<void>((resolve) => {
-              // Already done (instant process)
-              if (session.status === 'done') {
-                resolve()
-                return
-              }
-
-              resolveWait = () => {
-                clearTimeout(timer)
-                resolve()
-              }
-
-              const timer = setTimeout(() => {
-                resolveWait = null
-                resolve()
-              }, timeout)
-            })
-
-            return JSON.stringify({
-              commandId,
-              status: session.status,
-              exitCode: session.exitCode,
-              output: formatOutput(session.output, session.totalBytes, headChars, tailChars),
-            })
-          },
-        }),
-
-        // ── shell_output ────────────────────────────────────────────────
-        createTool({
-          id: 'shell_output',
-          description:
-            'Read output from a running or completed command. Use offset and length to paginate large outputs.',
-          schema: {
-            commandId: { type: 'string', description: 'Command ID from shell_exec' },
-            offset: {
-              type: 'number',
-              description: 'Character offset to start reading from (default: 0)',
-              required: false,
-            },
-            length: {
-              type: 'number',
-              description: 'Number of characters to read (default: 4000)',
-              required: false,
-            },
-          },
-          execute: async (args: { commandId: string; offset?: number; length?: number }) => {
-            const result = getSessionWithAccess(args.commandId, allowedHosts)
-            if (typeof result === 'string') return result
-
-            const session = result
-            const full = session.output.join('')
-            const offset = args.offset ?? 0
-            const length = args.length ?? 4000
-            const content = full.slice(offset, offset + length)
-
-            return JSON.stringify({
-              content,
-              offset,
-              length: content.length,
-              totalBytes: session.totalBytes,
-              status: session.status,
-              exitCode: session.exitCode,
-            })
-          },
-        }),
-
-        // ── shell_input ─────────────────────────────────────────────────
-        createTool({
-          id: 'shell_input',
-          description:
-            'Write to stdin of a running command. Use "\\x03" to send Ctrl+C (SIGINT).',
-          schema: {
-            commandId: { type: 'string', description: 'Command ID from shell_exec' },
-            input: { type: 'string', description: 'String to write to stdin' },
-          },
-          execute: async (args: { commandId: string; input: string }) => {
-            const result = getSessionWithAccess(args.commandId, allowedHosts)
-            if (typeof result === 'string') return result
-
-            const session = result
-            if (session.status === 'done') {
-              return `Error: Command "${args.commandId}" has already exited (code ${session.exitCode}).`
-            }
-
-            session.process.write(args.input)
-            return JSON.stringify({ ok: true })
-          },
-        }),
-      ])
     },
   }
 
