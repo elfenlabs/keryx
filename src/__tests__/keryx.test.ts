@@ -1434,7 +1434,7 @@ describe('Keryx Integration', () => {
     await kx.stop()
   })
 
-  test('RequestOptions.signal wires to abort (kills agent loop)', async () => {
+  test('RequestMessage.signal wires to abort (kills agent loop)', async () => {
     let agentAborted = false
 
     const kx = createKeryx({

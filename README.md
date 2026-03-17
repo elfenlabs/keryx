@@ -80,6 +80,7 @@ type KeryxConfig = {
   defaultProvider: Provider          // Nous provider for all agents (unless overridden)
   definitions?: Record<string, AgentDefinition>  // Named agent templates
   pollingInterval?: number           // Inbox poll interval in ms (default: 100)
+  bus?: Agora<KeryxEventMap>         // External event bus (creates one internally if omitted)
 }
 ```
 
@@ -181,7 +182,7 @@ Runtime daemon registration with hot-reload support.
 |---|---|
 | `register(daemon)` | Register (or replace) a daemon, triggers `onStart` |
 | `deregister(id)` | Remove a daemon, triggers `onStop` |
-| `list()` | List registered daemons with `{ id, order }` |
+| `list()` | List registered daemons with `{ id, capabilities }` |
 
 ```typescript
 await kx.daemons.register(loggerd())
@@ -241,56 +242,63 @@ This enables:
 
 ## Daemons
 
-Daemons (δαίμων, *spirit*) are middleware services that extend Keryx through **lifecycle hooks**. Unlike MCP servers (pull-only), daemons are **bidirectional** — they can provide tools, inject prompt segments, push messages into inboxes, and observe agent streams.
+Daemons (δαίμων, *spirit*) are middleware services that extend Keryx through the **[Agora](https://github.com/elfenlabs/agora) event bus**. Unlike MCP servers (pull-only), daemons are **bidirectional** — they can provide tools, inject prompt segments, push messages into inboxes, and observe agent streams.
+
+Daemons subscribe to Keryx events via `kx.bus.on()` in their `onStart` hook, and declare their **capabilities** — what events they read (observe), write (mutate), or emit.
 
 ```typescript
 import type { DaemonDefinition } from '@elfenlabs/keryx'
 
 const myDaemon: DaemonDefinition = {
   id: 'my-daemon',
-  order: 10,
-
-  // System lifecycle
-  onStart: (kx) => { /* start polling, connect websocket, etc. */ },
-  onStop: () => { /* cleanup */ },
-
-  // Agent lifecycle
-  onAgentSpawn: (ctx) => { /* agent instance created */ },
-  onAgentDestroy: (ctx) => { /* agent instance destroyed */ },
-
-  // Per-activation hooks
-  onBeforeActivation: (ctx) => {
-    ctx.addTools([queryTool])
-    ctx.addPromptSegment('You have access to the knowledge graph.')
+  capabilities: {
+    reads: ['activation:after'],             // observe (frozen payload)
+    writes: ['activation:before'],           // mutate (addTools, addPromptSegment)
+    description: 'Injects tools and logs activations',
   },
-  onAfterActivation: (ctx) => { /* cleanup, metrics */ },
 
-  // Tool interception
-  onBeforeToolCall: (ctx) => { /* arg mutation, secret injection */ },
-  onAfterToolCall: (ctx) => { /* logging, metrics */ },
+  onStart: (kx) => {
+    // Subscribe to events — enforced by capabilities
+    kx.bus.on('activation:before', (ctx) => {
+      ctx.addTools([queryTool])
+      ctx.addPromptSegment('You have access to the knowledge graph.')
+    }, 10)  // order: lower = runs first
 
-  // Observation
-  onMessageReceived: (ctx) => { /* logging, filtering */ },
-  onAgentStream: (ctx) => { /* real-time output/thinking/tool call observation */ },
+    kx.bus.on('activation:after', (ctx) => {
+      console.log(`Agent ${ctx.agentId} responded: ${ctx.response}`)
+    })
+  },
+
+  onStop: () => { /* cleanup */ },
 }
 
 await kx.daemons.register(myDaemon)
 ```
 
-### Lifecycle Hooks
+### Capabilities Manifest
 
-| Hook | When | Use |
+Every daemon declares its capabilities — what events it can access:
+
+| Access | Meaning | Example |
 |---|---|---|
-| `onStart(kx)` | Daemon is registered | Start background processes |
-| `onStop()` | Daemon is deregistered | Cleanup background processes |
-| `onAgentSpawn(ctx)` | Agent instance created | Inject spawn-time tools/prompts |
-| `onAgentDestroy(ctx)` | Agent instance destroyed | Cleanup per-agent resources |
-| `onMessageReceived(ctx)` | Message enters inbox | Logging, filtering |
-| `onBeforeActivation(ctx)` | Before Nous starts | Tool provisioning, prompt injection |
-| `onBeforeToolCall(ctx)` | Before a tool executes | Argument mutation, secret injection |
-| `onAfterToolCall(ctx)` | After a tool completes | Logging, metrics |
-| `onAfterActivation(ctx)` | After activation ends | Context persistence, cleanup |
-| `onAgentStream(ctx)` | During agent streaming | Real-time output/thinking/tool call observation |
+| **reads** | Observe (frozen payload, mutation methods throw) | `loggerd` reading `activation:after` |
+| **writes** | Mutate (full payload — `addTools()`, modify `args`) | `secretd` mutating `tool:before` args |
+| **emits** | Fire events on the bus | Custom daemons emitting custom events |
+
+Capabilities are **enforced at runtime** — subscribing to an undeclared event throws. Read-only listeners receive frozen payloads where mutation methods like `addTools()` are replaced with throwing stubs.
+
+### Event Map
+
+| Event | Payload | Typical Use |
+|---|---|---|
+| `message:received` | `MessageContext` | Logging, filtering |
+| `activation:before` | `ActivationContext` | Tool provisioning, prompt injection |
+| `activation:after` | `AfterActivationContext` | Context persistence, metrics |
+| `tool:before` | `BeforeToolCallContext` | Argument mutation, secret injection |
+| `tool:after` | `AfterToolCallContext` | Logging, metrics |
+| `agent:stream` | `AgentStreamContext` | Real-time output observation |
+| `agent:spawn` | `AgentSpawnContext` | Spawn-time tool/prompt injection |
+| `agent:destroy` | `AgentDestroyContext` | Per-agent resource cleanup |
 
 ### Scoped Configuration
 
@@ -310,16 +318,16 @@ const agentDef: AgentDefinition = {
 
 ### Built-in Daemons
 
-| Daemon | Purpose | Provides Tools | Pushes Messages |
-|---|---|---|---|
-| **loggerd** | Terminal logging for development observability | ✗ | ✗ |
-| **contextd** | Persist and restore Nous context between activations | ✗ | ✗ |
-| **crond** | Scheduled message delivery on intervals | ✗ | ✓ |
-| **keryxd** | Agent management — status, inbox reads, abort, flush | ✓ | ✗ |
-| **artifactd** | Shared artifact storage with ownership and read/write tools | ✓ | ✗ |
-| **secretd** | Secure secret injection via symbolic handles | ✗ | ✗ |
-| **streamd** | Real-time streaming event bus for agent output | ✗ | ✗ |
-| **shelld** | Shell session broker — exec, output pagination, stdin | ✓ | ✗ |
+| Daemon | Capabilities | Purpose |
+|---|---|---|
+| **loggerd** | reads: `message:received`, `activation:*`, `tool:*`, `agent:stream` | Terminal logging |
+| **contextd** | writes: `activation:before`, `activation:after` | Context persistence |
+| **crond** | *(lifecycle only)* | Scheduled message delivery |
+| **keryxd** | writes: `activation:before` | Agent management tools |
+| **artifactd** | writes: `activation:before` | Shared artifact storage |
+| **secretd** | writes: `activation:before`, `tool:before` | Secret injection |
+| **streamd** | reads: `agent:stream` | Real-time streaming events |
+| **shelld** | writes: `activation:before` | Shell session broker |
 
 See [docs/](docs/) for detailed daemon documentation.
 
@@ -355,6 +363,7 @@ type Attachment = {
 
 - Node.js 22+ or Bun 1.0+
 - `@elfenlabs/nous` ^0.8.0 (peer dependency)
+- `@elfenlabs/agora` (event bus)
 
 ## License
 

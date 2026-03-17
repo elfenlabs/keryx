@@ -11,8 +11,8 @@ import type {
   KeryxConfig,
   KeryxInstance,
   KeryxEventMap,
-  SendOptions,
-  RequestOptions,
+  SendMessage,
+  RequestMessage,
   RequestHandle,
   SpawnOptions,
   DestroyOptions,
@@ -72,7 +72,7 @@ export function createKeryx(config: KeryxConfig): KeryxInstance {
   const instance: KeryxInstance = {
     bus,
     /** Fire-and-forget message delivery */
-    async send(opts: SendOptions): Promise<void> {
+    async send(opts: SendMessage): Promise<void> {
       const msg = {
         id: crypto.randomUUID(),
         activationId: crypto.randomUUID(),
@@ -101,7 +101,7 @@ export function createKeryx(config: KeryxConfig): KeryxInstance {
      * - `handle.abort()` — kills the agent's Nous loop
      * - `await handle` — returns RequestResult (via .then())
      */
-    request(opts: RequestOptions): RequestHandle {
+    request(opts: RequestMessage): RequestHandle {
       const msgId = crypto.randomUUID()
       const agentId = opts.to
 

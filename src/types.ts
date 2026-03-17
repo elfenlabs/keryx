@@ -262,8 +262,8 @@ export type KeryxConfig = {
   bus?: Agora<KeryxEventMap>
 }
 
-/** Options for sending a message */
-export type SendOptions = {
+/** Shape of a fire-and-forget message */
+export type SendMessage = {
   to: string
   body: string
   from?: string | null
@@ -272,8 +272,8 @@ export type SendOptions = {
   metadata?: Record<string, unknown>
 }
 
-/** Options for request-reply */
-export type RequestOptions = {
+/** Shape of a request-reply message */
+export type RequestMessage = {
   to: string
   body: string
   priority?: number
@@ -286,8 +286,8 @@ export type RequestOptions = {
 export type KeryxInstance = {
   /** The Agora event bus — daemons subscribe here in onStart */
   bus: Agora<KeryxEventMap>
-  send: (opts: SendOptions) => Promise<void>
-  request: (opts: RequestOptions) => RequestHandle
+  send: (opts: SendMessage) => Promise<void>
+  request: (opts: RequestMessage) => RequestHandle
   start: () => void
   stop: () => Promise<void>
   daemons: {
