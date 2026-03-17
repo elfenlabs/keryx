@@ -56,12 +56,12 @@ export function contextd(opts?: ContextdOptions): DaemonDefinition {
   return {
     id: 'context',
     capabilities: {
-      writes: ['activation:before', 'activation:after'],
+      writes: ['activation.before', 'activation.after'],
       description: 'Persists and restores agent conversation context across activations',
     },
 
     onStart: (kx: KeryxInstance) => {
-      kx.bus.on('activation:before', (ctx) => {
+      kx.bus.on('activation.before', (ctx) => {
         const config = ctx.agentConfig['context'] as { persist?: boolean } | undefined
         if (!config?.persist) return
 
@@ -74,7 +74,7 @@ export function contextd(opts?: ContextdOptions): DaemonDefinition {
         }
       }, 5)
 
-      kx.bus.on('activation:after', (ctx) => {
+      kx.bus.on('activation.after', (ctx) => {
         const config = ctx.agentConfig['context'] as { persist?: boolean } | undefined
         if (!config?.persist) return
 

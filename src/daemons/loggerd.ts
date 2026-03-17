@@ -82,14 +82,14 @@ export function loggerd(opts?: LoggerdOptions): DaemonDefinition {
   return {
     id: 'loggerd',
     capabilities: {
-      reads: ['message:received', 'activation:before', 'activation:after',
-              'tool:before', 'tool:after', 'agent:stream'],
+      reads: ['message.received', 'activation.before', 'activation.after',
+              'tool.before', 'tool.after', 'agent.stream'],
       description: 'Logs agent activity to the console',
     },
 
     onStart: (kx: KeryxInstance) => {
       // ── message:received ───────────────────────────────────────────
-      kx.bus.on('message:received', (ctx) => {
+      kx.bus.on('message.received', (ctx) => {
         const from = ctx.message.from ?? 'external'
         const body = truncate(ctx.message.body, 60)
         const force = ctx.message.force ? ' [FORCE]' : ''
@@ -103,14 +103,14 @@ export function loggerd(opts?: LoggerdOptions): DaemonDefinition {
 
       // ── activation:before (verbose only) ───────────────────────────
       if (verbose) {
-        kx.bus.on('activation:before', (ctx) => {
+        kx.bus.on('activation.before', (ctx) => {
           fmtVerbose(ctx.agentId, 'activate', `processing message from ${ctx.message.from ?? 'external'}`, log)
         }, 0)
       }
 
       // ── tool:before (verbose only) ─────────────────────────────────
       if (verbose) {
-        kx.bus.on('tool:before', (ctx) => {
+        kx.bus.on('tool.before', (ctx) => {
           const argsStr = truncate(JSON.stringify(ctx.args), 120)
           fmtVerbose(ctx.agentId, 'tool_call', `${ctx.toolId}(${argsStr})`, log)
         }, 0)
@@ -118,7 +118,7 @@ export function loggerd(opts?: LoggerdOptions): DaemonDefinition {
 
       // ── tool:after (verbose only) ──────────────────────────────────
       if (verbose) {
-        kx.bus.on('tool:after', (ctx) => {
+        kx.bus.on('tool.after', (ctx) => {
           const resultStr = truncate(String(ctx.result), 200)
           fmtVerbose(ctx.agentId, 'tool_result', resultStr, log)
         }, 0)
@@ -126,7 +126,7 @@ export function loggerd(opts?: LoggerdOptions): DaemonDefinition {
 
       // ── agent:stream (verbose only) ────────────────────────────────
       if (verbose) {
-        kx.bus.on('agent:stream', (ctx) => {
+        kx.bus.on('agent.stream', (ctx) => {
           if (ctx.type === 'thinking') {
             if (ctx.phase === 'start') {
               thinkingBuffers.set(ctx.agentId, [])
@@ -161,7 +161,7 @@ export function loggerd(opts?: LoggerdOptions): DaemonDefinition {
       }
 
       // ── activation:after ───────────────────────────────────────────
-      kx.bus.on('activation:after', (ctx) => {
+      kx.bus.on('activation.after', (ctx) => {
         if (ctx.error) {
           if (verbose) {
             fmtVerbose(ctx.agentId, 'error', `✗ ${ctx.error.message}`, log)

@@ -307,24 +307,24 @@ describe('Keryx Integration', () => {
     const daemon1: DaemonDefinition = {
       id: 'first',
       capabilities: {
-        writes: ['message:received', 'activation:before', 'activation:after'],
+        writes: ['message.received', 'activation.before', 'activation.after'],
       },
       onStart: (kx) => {
-        kx.bus.on('message:received', () => { hookLog.push('first:message:received') }, 1)
-        kx.bus.on('activation:before', () => { hookLog.push('first:activation:before') }, 1)
-        kx.bus.on('activation:after', () => { hookLog.push('first:activation:after') }, 1)
+        kx.bus.on('message.received', () => { hookLog.push('first:message:received') }, 1)
+        kx.bus.on('activation.before', () => { hookLog.push('first:activation:before') }, 1)
+        kx.bus.on('activation.after', () => { hookLog.push('first:activation:after') }, 1)
       },
     }
 
     const daemon2: DaemonDefinition = {
       id: 'second',
       capabilities: {
-        writes: ['message:received', 'activation:before', 'activation:after'],
+        writes: ['message.received', 'activation.before', 'activation.after'],
       },
       onStart: (kx) => {
-        kx.bus.on('message:received', () => { hookLog.push('second:message:received') }, 2)
-        kx.bus.on('activation:before', () => { hookLog.push('second:activation:before') }, 2)
-        kx.bus.on('activation:after', () => { hookLog.push('second:activation:after') }, 2)
+        kx.bus.on('message.received', () => { hookLog.push('second:message:received') }, 2)
+        kx.bus.on('activation.before', () => { hookLog.push('second:activation:before') }, 2)
+        kx.bus.on('activation.after', () => { hookLog.push('second:activation:after') }, 2)
       },
     }
 
@@ -363,10 +363,10 @@ describe('Keryx Integration', () => {
     const daemon: DaemonDefinition = {
       id: 'tool-injector',
       capabilities: {
-        writes: ['activation:before'],
+        writes: ['activation.before'],
       },
       onStart: (kx) => {
-        kx.bus.on('activation:before', (ctx) => {
+        kx.bus.on('activation.before', (ctx) => {
           ctx.addTools([
             createTool({
               id: 'custom_tool',
@@ -408,10 +408,10 @@ describe('Keryx Integration', () => {
     const daemon: DaemonDefinition = {
       id: 'prompt-injector',
       capabilities: {
-        writes: ['activation:before'],
+        writes: ['activation.before'],
       },
       onStart: (kx) => {
-        kx.bus.on('activation:before', (ctx) => {
+        kx.bus.on('activation.before', (ctx) => {
           ctx.addPromptSegment('You have access to the Thesauros knowledge graph.')
         })
       },
@@ -626,10 +626,10 @@ describe('Keryx Integration', () => {
     const daemon: DaemonDefinition = {
       id: 'spy',
       capabilities: {
-        reads: ['activation:after'],
+        reads: ['activation.after'],
       },
       onStart: (kx) => {
-        kx.bus.on('activation:after', (ctx) => {
+        kx.bus.on('activation.after', (ctx) => {
           capturedResponse = ctx.response ?? ''
           capturedSteps = ctx.steps
         })
@@ -662,10 +662,10 @@ describe('Keryx Integration', () => {
     const daemon: DaemonDefinition = {
       id: 'spy',
       capabilities: {
-        reads: ['activation:after'],
+        reads: ['activation.after'],
       },
       onStart: (kx) => {
-        kx.bus.on('activation:after', (ctx) => {
+        kx.bus.on('activation.after', (ctx) => {
           capturedError = ctx.error
         })
       },
@@ -778,10 +778,10 @@ describe('Keryx Integration', () => {
     const daemon: DaemonDefinition = {
       id: 'spawn-watcher',
       capabilities: {
-        writes: ['agent:spawn'],
+        writes: ['agent.spawn'],
       },
       onStart: (kx) => {
-        kx.bus.on('agent:spawn', (ctx) => {
+        kx.bus.on('agent.spawn', (ctx) => {
           spawnedId = ctx.agentId
           ctx.addTools([
             createTool({
@@ -827,10 +827,10 @@ describe('Keryx Integration', () => {
     const daemon: DaemonDefinition = {
       id: 'destroy-watcher',
       capabilities: {
-        reads: ['agent:destroy'],
+        reads: ['agent.destroy'],
       },
       onStart: (kx) => {
-        kx.bus.on('agent:destroy', (ctx) => {
+        kx.bus.on('agent.destroy', (ctx) => {
           destroyedId = ctx.agentId
         }, 1)
       },
@@ -860,10 +860,10 @@ describe('Keryx Integration', () => {
     const daemon: DaemonDefinition = {
       id: 'prompt-spawner',
       capabilities: {
-        writes: ['agent:spawn'],
+        writes: ['agent.spawn'],
       },
       onStart: (kx) => {
-        kx.bus.on('agent:spawn', (ctx) => {
+        kx.bus.on('agent.spawn', (ctx) => {
           ctx.addPromptSegment('You have vault access.')
         }, 1)
       },
@@ -1262,10 +1262,10 @@ describe('Keryx Integration', () => {
     const pdfDaemon: DaemonDefinition = {
       id: 'pdf-processor',
       capabilities: {
-        writes: ['activation:before'],
+        writes: ['activation.before'],
       },
       onStart: (kx) => {
-        kx.bus.on('activation:before', (ctx) => {
+        kx.bus.on('activation.before', (ctx) => {
           const atts = (ctx.message.metadata?.attachments ?? []) as any[]
           const remaining: any[] = []
           for (const att of atts) {

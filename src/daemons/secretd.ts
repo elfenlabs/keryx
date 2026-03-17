@@ -226,7 +226,7 @@ export function secretd(opts: SecretdOptions): DaemonDefinition {
   return {
     id: 'secretd',
     capabilities: {
-      writes: ['activation:before', 'tool:before'],
+      writes: ['activation.before', 'tool.before'],
       description: 'Manages secrets substitution in tool arguments and prompts',
     },
 
@@ -243,7 +243,7 @@ export function secretd(opts: SecretdOptions): DaemonDefinition {
         }
       }
 
-      kx.bus.on('activation:before', (ctx) => {
+      kx.bus.on('activation.before', (ctx) => {
         const granted = getGrantedSecrets(ctx.agentId)
         if (granted.length === 0) return
 
@@ -253,7 +253,7 @@ export function secretd(opts: SecretdOptions): DaemonDefinition {
         )
       }, 3)
 
-      kx.bus.on('tool:before', (ctx) => {
+      kx.bus.on('tool.before', (ctx) => {
         const agentId = ctx.agentId
         const toolId = ctx.toolId
 

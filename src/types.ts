@@ -217,14 +217,14 @@ export type AgentDestroyContext = {
 
 /** Typed event map for the Keryx event bus (Agora) */
 export type KeryxEventMap = {
-  'message:received':    MessageContext
-  'activation:before':   ActivationContext
-  'activation:after':    AfterActivationContext
-  'tool:before':         BeforeToolCallContext
-  'tool:after':          AfterToolCallContext
-  'agent:stream':        AgentStreamContext
-  'agent:spawn':         AgentSpawnContext
-  'agent:destroy':       AgentDestroyContext
+  'message.received':    MessageContext
+  'activation.before':   ActivationContext
+  'activation.after':    AfterActivationContext
+  'tool.before':         BeforeToolCallContext
+  'tool.after':          AfterToolCallContext
+  'agent.stream':        AgentStreamContext
+  'agent.spawn':         AgentSpawnContext
+  'agent.destroy':       AgentDestroyContext
 }
 
 /** Capability manifest — what events a daemon can access */

@@ -252,19 +252,19 @@ import type { DaemonDefinition } from '@elfenlabs/keryx'
 const myDaemon: DaemonDefinition = {
   id: 'my-daemon',
   capabilities: {
-    reads: ['activation:after'],             // observe (frozen payload)
-    writes: ['activation:before'],           // mutate (addTools, addPromptSegment)
+    reads: ['activation.after'],             // observe (frozen payload)
+    writes: ['activation.before'],           // mutate (addTools, addPromptSegment)
     description: 'Injects tools and logs activations',
   },
 
   onStart: (kx) => {
     // Subscribe to events — enforced by capabilities
-    kx.bus.on('activation:before', (ctx) => {
+    kx.bus.on('activation.before', (ctx) => {
       ctx.addTools([queryTool])
       ctx.addPromptSegment('You have access to the knowledge graph.')
     }, 10)  // order: lower = runs first
 
-    kx.bus.on('activation:after', (ctx) => {
+    kx.bus.on('activation.after', (ctx) => {
       console.log(`Agent ${ctx.agentId} responded: ${ctx.response}`)
     })
   },
@@ -281,8 +281,8 @@ Every daemon declares its capabilities — what events it can access:
 
 | Access | Meaning | Example |
 |---|---|---|
-| **reads** | Observe (frozen payload, mutation methods throw) | `loggerd` reading `activation:after` |
-| **writes** | Mutate (full payload — `addTools()`, modify `args`) | `secretd` mutating `tool:before` args |
+| **reads** | Observe (frozen payload, mutation methods throw) | `loggerd` reading `activation.after` |
+| **writes** | Mutate (full payload — `addTools()`, modify `args`) | `secretd` mutating `tool.before` args |
 | **emits** | Fire events on the bus | Custom daemons emitting custom events |
 
 Capabilities are **enforced at runtime** — subscribing to an undeclared event throws. Read-only listeners receive frozen payloads where mutation methods like `addTools()` are replaced with throwing stubs.
@@ -291,14 +291,14 @@ Capabilities are **enforced at runtime** — subscribing to an undeclared event 
 
 | Event | Payload | Typical Use |
 |---|---|---|
-| `message:received` | `MessageContext` | Logging, filtering |
-| `activation:before` | `ActivationContext` | Tool provisioning, prompt injection |
-| `activation:after` | `AfterActivationContext` | Context persistence, metrics |
-| `tool:before` | `BeforeToolCallContext` | Argument mutation, secret injection |
-| `tool:after` | `AfterToolCallContext` | Logging, metrics |
-| `agent:stream` | `AgentStreamContext` | Real-time output observation |
-| `agent:spawn` | `AgentSpawnContext` | Spawn-time tool/prompt injection |
-| `agent:destroy` | `AgentDestroyContext` | Per-agent resource cleanup |
+| `message.received` | `MessageContext` | Logging, filtering |
+| `activation.before` | `ActivationContext` | Tool provisioning, prompt injection |
+| `activation.after` | `AfterActivationContext` | Context persistence, metrics |
+| `tool.before` | `BeforeToolCallContext` | Argument mutation, secret injection |
+| `tool.after` | `AfterToolCallContext` | Logging, metrics |
+| `agent.stream` | `AgentStreamContext` | Real-time output observation |
+| `agent.spawn` | `AgentSpawnContext` | Spawn-time tool/prompt injection |
+| `agent.destroy` | `AgentDestroyContext` | Per-agent resource cleanup |
 
 ### Scoped Configuration
 
@@ -320,14 +320,14 @@ const agentDef: AgentDefinition = {
 
 | Daemon | Capabilities | Purpose |
 |---|---|---|
-| **loggerd** | reads: `message:received`, `activation:*`, `tool:*`, `agent:stream` | Terminal logging |
-| **contextd** | writes: `activation:before`, `activation:after` | Context persistence |
+| **loggerd** | reads: `message.received`, `activation.*`, `tool.*`, `agent.stream` | Terminal logging |
+| **contextd** | writes: `activation.before`, `activation.after` | Context persistence |
 | **crond** | *(lifecycle only)* | Scheduled message delivery |
-| **keryxd** | writes: `activation:before` | Agent management tools |
-| **artifactd** | writes: `activation:before` | Shared artifact storage |
-| **secretd** | writes: `activation:before`, `tool:before` | Secret injection |
-| **streamd** | reads: `agent:stream` | Real-time streaming events |
-| **shelld** | writes: `activation:before` | Shell session broker |
+| **keryxd** | writes: `activation.before` | Agent management tools |
+| **artifactd** | writes: `activation.before` | Shared artifact storage |
+| **secretd** | writes: `activation.before`, `tool.before` | Secret injection |
+| **streamd** | reads: `agent.stream` | Real-time streaming events |
+| **shelld** | writes: `activation.before` | Shell session broker |
 
 See [docs/](docs/) for detailed daemon documentation.
 

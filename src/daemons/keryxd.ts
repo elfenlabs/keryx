@@ -59,14 +59,14 @@ export function keryxd(): DaemonDefinition {
   return {
     id: 'keryxd',
     capabilities: {
-      writes: ['activation:before'],
+      writes: ['activation.before'],
       description: 'Provides agent management and observability tools',
     },
 
     onStart: (kx: KeryxInstance) => {
       kxRef = kx
 
-      kx.bus.on('activation:before', (ctx) => {
+      kx.bus.on('activation.before', (ctx) => {
         const config = ctx.agentConfig['keryxd'] as KeryxdConfig | undefined
         if (!config || !kxRef) return
 

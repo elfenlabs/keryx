@@ -186,7 +186,7 @@ async function getTools(agentId: string, root: string) {
   }
 
   // Emit activation:before to collect tools
-  await bus.emit('activation:before', {
+  await bus.emit('activation.before', {
     agentId,
     agentConfig: {},
     message: {} as any,

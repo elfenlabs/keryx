@@ -335,7 +335,7 @@ export function createKeryx(config: KeryxConfig): KeryxInstance {
         const spawnTools: Tool<any>[] = []
         const spawnPromptSegments: string[] = []
 
-        await bus.emit('agent:spawn', {
+        await bus.emit('agent.spawn', {
           agentId: id,
           instance: agentInstance,
           addTools: (tools: Tool<any>[]) => {

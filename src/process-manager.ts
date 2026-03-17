@@ -147,7 +147,7 @@ export class ProcessManager {
   /** Enqueue a message and trigger processing */
   async enqueueAndProcess(msg: Message): Promise<void> {
     // Run onMessageReceived on all daemons
-    await this.bus.emit('message:received', { message: msg })
+    await this.bus.emit('message.received', { message: msg })
 
     this.inbox.enqueue(msg)
 
@@ -244,7 +244,7 @@ export class ProcessManager {
     this.inbox.flush(agentId)
 
     // Run onAgentDestroy daemon hooks
-    await this.bus.emit('agent:destroy', { agentId, instance })
+    await this.bus.emit('agent.destroy', { agentId, instance })
 
     // Deregister from the registry
     this.registry.deregister(agentId)
@@ -291,7 +291,7 @@ export class ProcessManager {
     }
 
     // Run onBeforeActivation hooks (daemons inject tools + prompt segments, restore context)
-    await this.bus.emit('activation:before', activationCtx)
+    await this.bus.emit('activation.before', activationCtx)
 
     // Create the send_message and ask_agent tools for this activation
     const sendMessageTool = createSendMessageTool({
@@ -407,23 +407,23 @@ export class ProcessManager {
         tools: allTools,
         signal: abortController.signal,
         onThinkingStart: () => {
-          void this.bus.emit('agent:stream', { agentId, type: 'thinking', phase: 'start' })
+          void this.bus.emit('agent.stream', { agentId, type: 'thinking', phase: 'start' })
         },
         onThinking: (chunk) => {
-          void this.bus.emit('agent:stream', { agentId, type: 'thinking', phase: 'chunk', chunk })
+          void this.bus.emit('agent.stream', { agentId, type: 'thinking', phase: 'chunk', chunk })
           const pending = this.pendingReplies.get(msg.id)
           if (pending?.pushEvent) {
             pending.pushEvent({ type: 'thinking', activationId: msg.activationId, agentId, content: chunk })
           }
         },
         onThinkingEnd: () => {
-          void this.bus.emit('agent:stream', { agentId, type: 'thinking', phase: 'end' })
+          void this.bus.emit('agent.stream', { agentId, type: 'thinking', phase: 'end' })
         },
         onOutputStart: () => {
-          void this.bus.emit('agent:stream', { agentId, type: 'output', phase: 'start' })
+          void this.bus.emit('agent.stream', { agentId, type: 'output', phase: 'start' })
         },
         onOutput: (chunk) => {
-          void this.bus.emit('agent:stream', { agentId, type: 'output', phase: 'chunk', chunk })
+          void this.bus.emit('agent.stream', { agentId, type: 'output', phase: 'chunk', chunk })
           // Pipe structured event to pending reply stream
           const pending = this.pendingReplies.get(msg.id)
           if (pending?.pushEvent) {
@@ -431,29 +431,29 @@ export class ProcessManager {
           }
         },
         onOutputEnd: () => {
-          void this.bus.emit('agent:stream', { agentId, type: 'output', phase: 'end' })
+          void this.bus.emit('agent.stream', { agentId, type: 'output', phase: 'end' })
         },
         onToolCall: (index, id, name) => {
-          void this.bus.emit('agent:stream', {
+          void this.bus.emit('agent.stream', {
             agentId, type: 'tool_call', phase: 'start',
             toolIndex: index, toolCallId: id, toolName: name,
           })
         },
         onToolCallArgs: (index, argChunk) => {
-          void this.bus.emit('agent:stream', {
+          void this.bus.emit('agent.stream', {
             agentId, type: 'tool_call', phase: 'chunk',
             toolIndex: index, chunk: argChunk,
           })
         },
         onBeforeToolCall: async (tool, args) => {
-          await this.bus.emit('tool:before', { agentId, toolId: tool.id, args })
+          await this.bus.emit('tool.before', { agentId, toolId: tool.id, args })
           const pending = this.pendingReplies.get(msg.id)
           if (pending?.pushEvent) {
             pending.pushEvent({ type: 'tool_call', activationId: msg.activationId, agentId, name: tool.id, args })
           }
         },
         onAfterToolCall: async (tool, args, result) => {
-          await this.bus.emit('tool:after', { agentId, toolId: tool.id, args, result })
+          await this.bus.emit('tool.after', { agentId, toolId: tool.id, args, result })
           const pending = this.pendingReplies.get(msg.id)
           if (pending?.pushEvent) {
             pending.pushEvent({ type: 'tool_result', activationId: msg.activationId, agentId, name: tool.id, result: String(result) })
@@ -517,7 +517,7 @@ export class ProcessManager {
         error,
         steps,
       }
-      await this.bus.emit('activation:after', postCtx)
+      await this.bus.emit('activation.after', postCtx)
 
       // Resolve pending reply with agent's final output (used by kx.request and agent_ask)
       const pending = this.pendingReplies.get(msg.id)
