@@ -269,6 +269,13 @@ export function createKeryx(config: KeryxConfig): KeryxInstance {
 
     daemons: {
       async register(daemon: DaemonDefinition): Promise<void> {
+        if (!daemon.capabilities) {
+          throw new Error(
+            `[keryx] Daemon "${daemon.id}" is missing a capabilities declaration. ` +
+            `Add \`capabilities: {}\` for no access, or declare reads/writes/emits.`,
+          )
+        }
+
         // Hot-reload: stop old daemon if re-registering same ID
         const existing = daemonDefs.get(daemon.id)
         if (existing) {
